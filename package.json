@@ -1,0 +1,58 @@
+{
+  "name": "serial-hub-mcp",
+  "version": "0.1.0",
+  "description": "Serial port MCP server and hub: local UARTs plus remote ESP32-style bridges, byte-transparent I/O, durable per-connection logs, and an endpoint registry for future TCP/UDP/KCP/MQTT transports.",
+  "type": "module",
+  "main": "src/server.js",
+  "bin": {
+    "serial-hub-mcp": "src/server.js"
+  },
+  "files": [
+    "src",
+    "docs",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "author": "yhuan416 <yhuan416@foxmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhuan416/serial-hub-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yhuan416/serial-hub-mcp/issues"
+  },
+  "homepage": "https://github.com/yhuan416/serial-hub-mcp#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "serial",
+    "uart",
+    "esp32",
+    "serialport",
+    "embedded",
+    "debugging"
+  ],
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "smoke": "node test/server.smoke.js",
+    "lint": "eslint . && npm run format:check",
+    "format": "prettier --write \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
+    "format:check": "prettier --check \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
+    "test:ci": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=report.xml"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "serialport": "^13.0.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^15.15.0",
+    "prettier": "^3.9.10"
+  }
+}

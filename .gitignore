@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+*.log
+*.tgz
+.env
+.DS_Store
+report.xml
+eslint-report.json
+gl-code-quality-report.json
