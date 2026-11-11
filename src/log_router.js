@@ -156,7 +156,9 @@ export class LogRouter {
     if (!local && remote.length === 0 && errors.length === 0) {
       throw new Error("日志功能未启用");
     }
-    const total = (local?.total ?? 0) + remote.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+    const total =
+      (local?.total ?? 0) +
+      remote.reduce((sum, r) => sum + (Number(r.total ?? r.index_count) || 0), 0);
     return {
       scope: "all",
       ...(local || {}),
