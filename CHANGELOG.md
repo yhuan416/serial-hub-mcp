@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- NTP/SNTP wall-clock timestamps: `HELLO/LOG_STATS.time` reports `epoch_ms/synced/source`;
+  remote log entries carry epoch `ts` with `ts_source:"ntp"`; NTP sync seals the pre-sync
+  segment and starts a segment with a persisted `epoch_base_ms`; `LOG_EXPORT`/host export
+  expose the time base.
+
 - No-loss pipeline groundwork: UART RX/TX no longer performs SD I/O; lines/TX writes are
   queued in a 3 MiB PSRAM queue and written raw+index by a dedicated task. Queue drops and
   UART overflow are counted and emitted as `sd.queue_drop`/`uart.overflow` events.

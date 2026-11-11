@@ -325,6 +325,8 @@ export class RemoteLogStore {
       pages,
       scan_truncated: scanTruncated,
       time_source: res?.time_source ?? "tick",
+      time_base_ms: res?.time_base_ms ?? null,
+      time_synced: res?.time_synced ?? false,
       query: {
         limit,
         order,
@@ -332,7 +334,11 @@ export class RemoteLogStore {
         ...(opts.regex ? { regex: opts.regex } : {}),
       },
       ...(opts.time_from != null || opts.time_to != null
-        ? { time_filter: "ignored (device clock is uptime tick)" }
+        ? {
+            time_filter: res?.time_synced
+              ? "host-side only; device returns epoch timestamps but does not push time filters"
+              : "ignored (device clock is uptime tick)",
+          }
         : {}),
     };
   }
@@ -416,6 +422,8 @@ export class RemoteLogStore {
     let firstSeq = null;
     let lastSeq = null;
     let actualSegment = segment ?? null;
+    let timeBaseMs = null;
+    let timeSynced = false;
     let eof = false;
 
     try {
@@ -435,6 +443,8 @@ export class RemoteLogStore {
         const chunk = Buffer.from(res.chunk_b64 || "", "base64");
         const index = Buffer.from(res.index_b64 || "", "base64");
         if (res.segment) actualSegment = res.segment;
+        if (Number.isFinite(res.time_base_ms)) timeBaseMs = res.time_base_ms;
+        if (typeof res.time_synced === "boolean") timeSynced = res.time_synced;
         bytes += chunk.length;
 
         for (let o = 0; o + INDEX_REC_BYTES <= index.length; o += INDEX_REC_BYTES) {
@@ -469,6 +479,8 @@ export class RemoteLogStore {
       path: file,
       dir,
       segment: actualSegment,
+      time_base_ms: timeBaseMs,
+      time_synced: timeSynced,
       bytes,
       lines,
       pages,

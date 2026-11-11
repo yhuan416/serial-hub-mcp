@@ -240,13 +240,14 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
  "seq_from":100,"seq_to":null,"time_from":null,"time_to":null,
  "contains":null,"regex":null,"cursor":null,"limit":100}
 → {"id":30,"ok":true,"result":{
-  "entries":[{"seq":123,"ts":1760000000123,"dir":"rx","offset":1000,
+  "entries":[{"seq":123,"ts":1760000000123,"ts_source":"ntp","dir":"rx","offset":1000,
               "line":"OK","hex":"4f4b","bytes":2}],
   "count":1,"truncated":false,"next_cursor":"123","earliest_seq":100,
   "ram_earliest_seq":100,"ram_latest_seq":123,"ram_count":24,
   "sd_earliest_seq":1,"sd_latest_seq":4567,
   "retention":{"capacity_bytes":21474836480,"used_bytes":1048576,"evicted_lines":null},
-  "source":"device","authoritative":true,"time_source":"tick"
+  "source":"device","authoritative":true,"time_source":"ntp",
+  "time_synced":true,"time_base_ms":1759999999000
 }}
 ```
 
@@ -255,6 +256,9 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
 - `contains/regex` 不在 `caps.log_filter` 内，host 分页拉取后本地过滤（有页数上限）。
 - `earliest_seq` 是 RAM 窗口起点；响应另带 `ram_earliest_seq/ram_latest_seq` 与
   `sd_earliest_seq/sd_latest_seq`，三者不可混用。
+- NTP 同步后条目 `ts` 是 epoch 毫秒、`ts_source:"ntp"`；未同步条目是 uptime tick
+  (`ts_source:"tick"`)。`LOG_EXPORT` 带 `time_base_ms/time_synced`，用于把 index 的
+  tick 还原成 epoch；NTP 首次同步会封存 pre-sync 段并新建带 base 的 active 段。
 - 跨源查询由 hub 按 `connection_id` 分块，**不按 seq 归并**。
 
 ### LOG_STATS
@@ -273,7 +277,7 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
   "rx_bytes":1048576,"tx_bytes":0,"uart_overflow_events":0,"uart_overflow_bytes":0,
   "sd_queue":{"bytes":3145728,"used":0,"dropped":0,"dropped_bytes":0},
   "ring":{"bytes":4194304,"used":1024,"start_offset":980,"end_offset":1013,"dropped_bytes":0},
-  "time":{"synced":false,"source":"tick"}
+  "time":{"epoch_ms":1760000000123,"synced":true,"source":"ntp","tick_ms":123456789}
 }}
 ```
 

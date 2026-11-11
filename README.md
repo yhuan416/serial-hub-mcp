@@ -151,8 +151,8 @@ includes it in the provisioning QR when provisioning is active.
   oldest live-window entry, while `sd_earliest_seq`/`log_stats.segments[]` describe the SD
   segment(s). They are different seq spaces.
 - `contains`/`regex` scan up to 20 RAM pages (bounded); they are not a full SD search. Use
-  `log_export` for historical full-text work. `time_from/time_to` are ignored on remote
-  because the device currently exposes uptime ticks, not epoch time.
+  `log_export` for historical full-text work. `time_from/time_to` are not pushed down to the
+  device yet; inspect `time_source`/`ts_source` before relying on them.
 - `line`/`hex` in `log_query` are capped by the device (`log_line_max_bytes`, default 192);
   `bytes` is the full length. `log_export` writes the raw bytes.
 - `log_stats.segments[]` lists every segment with `first_seq/latest_seq/active`; `log_export`
@@ -205,6 +205,9 @@ All paths use XDG defaults and can be overridden:
   per write. Non-UTF-8 content is still available as raw hex.
 - Remote capture is decoupled: the UART task only enqueues lines into a PSRAM queue; a
   lower-priority writer task does SD raw+index I/O. Queue/overflow loss is counted/evented.
+- When the device has SNTP sync, `LOG_QUERY` entries carry epoch `ts` and per-entry
+  `ts_source:"ntp"`; otherwise they carry uptime ticks (`ts_source:"tick"`). NTP sync also
+  seals the pre-sync segment and starts a time-anchored segment (`LOG_STATS.epoch_base_ms`).
 - Each log entry is `{ seq, ts, conn, dir, offset, line, hex, bytes }`. `seq` is per log
   source; the hub never renumbers it. For remote SD history, seq is **per segment**;
   `log_stats.segments[]` gives each segment's range and `log_export` takes `segment`.
