@@ -10,6 +10,8 @@ line for retrieval, but the raw hex is always the source of truth.
 
 ## Features
 
+- **Two transports**: `stdio` (default) and stateless **MCP Streamable HTTP** (`--http`), with
+  optional Bearer auth plus unauthenticated `/health` and `/info` endpoints.
 - **Local serial** via [`serialport`](https://serialport.io/): `list_ports`, open by path,
   profile, `sn`/`vid`/`pid`, configurable baud/parity/flow control.
 - **Byte-accurate I/O**: `read` (cat), `transact` (write + wait, ignores pre-write noise),
@@ -40,7 +42,7 @@ grant read access to `/dev/ttyUSB*`, `/dev/ttyACM*`).
 
 ## MCP client configuration
 
-The server speaks MCP over **stdio**.
+### stdio (default)
 
 ```json
 {
@@ -51,6 +53,39 @@ The server speaks MCP over **stdio**.
   }
 }
 ```
+
+### Streamable HTTP
+
+Start the server with `--http`, then point clients at the MCP endpoint. The exact client
+config shape varies; for clients that accept a URL and headers:
+
+```json
+{
+  "mcpServers": {
+    "serial-hub": {
+      "type": "http",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+## HTTP mode
+
+```bash
+serial-hub-mcp --http                      # 127.0.0.1:8787/mcp
+serial-hub-mcp --http --host 0.0.0.0 --port 8787
+SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
+```
+
+- Stateless Streamable HTTP: every request gets its own MCP server instance while sharing the
+  same connection manager / log router / queue, so connections persist across requests.
+- `GET /health` and `GET /info` are unauthenticated and contain no secrets.
+- The server listens on loopback by default. If you bind a non-loopback address **without**
+  `SERIAL_HUB_MCP_HTTP_TOKEN`, it prints a warning — anyone who can reach the port can operate
+  the serial ports.
+- The token is compared with a constant-time check and sent as `Authorization: Bearer <token>`.
 
 ## Tools
 
@@ -103,6 +138,13 @@ All paths use XDG defaults and can be overridden:
 | `SERIAL_HUB_MCP_LOG_PART_BYTES` | `8388608` (8 MiB) | Partition roll size |
 | `SERIAL_HUB_MCP_PROFILES_DIR` | `$XDG_CONFIG_HOME/serial-hub-mcp` | Profiles |
 | `SERIAL_HUB_MCP_DUMPS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/dumps` | `dump_to_file` output |
+| `SERIAL_HUB_MCP_HTTP` | unset | `1` enables HTTP mode (same as `--http`) |
+| `SERIAL_HUB_MCP_HTTP_HOST` | `127.0.0.1` | HTTP bind host |
+| `SERIAL_HUB_MCP_HTTP_PORT` | `8787` | HTTP bind port |
+| `SERIAL_HUB_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path |
+| `SERIAL_HUB_MCP_HTTP_HEALTH_PATH` | `/health` | Health endpoint (unauthenticated) |
+| `SERIAL_HUB_MCP_HTTP_INFO_PATH` | `/info` | Service info endpoint (unauthenticated) |
+| `SERIAL_HUB_MCP_HTTP_TOKEN` | unset | Optional Bearer token for `/mcp` |
 
 ## Data and log model
 
@@ -125,9 +167,10 @@ All paths use XDG defaults and can be overridden:
 
 ```bash
 npm install
-npm test        # unit tests + stdio smoke (no hardware required)
-npm run lint    # eslint + prettier check
-npm run smoke   # MCP handshake + tool enumeration only
+npm test          # unit tests + stdio/HTTP smoke (no hardware required)
+npm run lint      # eslint + prettier check
+npm run smoke     # MCP handshake + tool enumeration only
+npm run smoke:http
 ```
 
 ## License

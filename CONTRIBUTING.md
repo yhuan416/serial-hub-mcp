@@ -7,10 +7,15 @@ level — keep it that way.
 
 ```bash
 npm install
-npm test        # unit tests + stdio smoke; no serial hardware required
+npm test        # unit tests + stdio/HTTP smoke; no serial hardware required
 npm run lint    # eslint + prettier check
 npm run smoke   # MCP handshake + tool enumeration only
+npm run smoke:http
 ```
+
+Both transports must keep working: stdio (`runStdio`) and stateless Streamable HTTP
+(`runHttp`). The HTTP handler builds a fresh MCP server per request but shares the
+connection manager, log router and queue.
 
 Node.js >= 18 is required. On Linux you do **not** need a serial device to run the tests
 (they use a fake link).

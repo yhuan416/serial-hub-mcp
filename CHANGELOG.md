@@ -6,6 +6,8 @@ All notable changes to this project are documented here.
 
 Initial open-source release.
 
+- **Two transports**: stdio (default) and stateless MCP Streamable HTTP (`--http`), with optional
+  Bearer auth (`SERIAL_HUB_MCP_HTTP_TOKEN`) and unauthenticated `/health` + `/info`.
 - 18 MCP tools: connection lifecycle, byte I/O (`read`/`write`/`transact`/`receive`/`dump_to_file`),
   control lines (`set_dtr_rts`/`send_break`), profiles and log retrieval.
 - Byte-transparent data plane with absolute consume cursor, cross-chunk matching, bounded RX

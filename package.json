@@ -39,6 +39,7 @@
     "start": "node src/server.js",
     "test": "node --test",
     "smoke": "node test/server.smoke.js",
+    "smoke:http": "node --test test/http.smoke.js",
     "lint": "eslint . && npm run format:check",
     "format": "prettier --write \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
     "format:check": "prettier --check \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
