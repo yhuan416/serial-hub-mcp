@@ -27,12 +27,17 @@ line for retrieval, but the raw hex is always the source of truth.
   pull, device-side offsets, and a `transact` barrier that excludes pre-write bytes.
   Remote `log_query/log_stats/log_clear` proxy the device via `RemoteLogStore`,
   `log_export` pulls the device SD history into a host file (separate from live
-  `dump_to_file`), and `event_query` surfaces device control-plane events. `test-utils/fake_bridge.js` still covers the wire contract; the ESP32
-  firmware lives in `serial-hub-bridge`. Other schemes (`ws/udp/kcp/mqtt`) plug in via the
-  scheme registry.
+  `dump_to_file`), and `event_query` surfaces device control-plane events. Queries without
+  `connection_id` aggregate local + all remote connections. `test-utils/fake_bridge.js`
+  covers the wire contract; the ESP32 firmware lives in `serial-hub-bridge`.
+  Other schemes (`ws/udp/kcp/mqtt`) plug in via the scheme registry.
+- **Remote auth**: the bridge requires a HELLO token once configured (NVS-generated per
+  device or `CONFIG_BRIDGE_AUTH_TOKEN`); pass it as `open({token})`. v0 is still plaintext,
+  so use a trusted LAN or a VPN/SSH tunnel.
 
-> Status: `0.1.x` — local serial is production-ready; the host-side TCP remote link is
-> implemented and tested against a fake bridge; ESP32 firmware and extra transports are next.
+> Status: `0.1.x` — local serial and the TCP remote link are implemented; the ESP32-S3
+> firmware (`serial-hub-bridge`) supports SD segment resume, auth, events and 4 MiB ring.
+> Extra transports (`ws/udp/kcp/mqtt`) are next.
 
 ## Install
 
@@ -108,8 +113,8 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `set_dtr_rts` | Set DTR/RTS, optionally pulse (reset/bootloader) |
 | `send_break` | Send a BREAK for a given duration |
 | `profile_list/save/delete` | Reusable named connection profiles |
-| `log_query/stats/clear` | Search, inspect and clear per-connection logs |
-| `log_export` | Export a remote device's authoritative SD log to a host file (seq/dir paged) |
+| `log_query/stats/clear` | Search, inspect and clear logs (no `connection_id` = local + remote) |
+| `log_export` | Export a remote device's authoritative SD log to a host file (segment/seq/dir paged) |
 | `event_query` | Query remote control-plane events (SD mount/remount/write errors, ring drops) |
 | `service_info` | Service name, version, changelog |
 
@@ -134,7 +139,24 @@ receive({ connection_id: "...", budget_ms: 5000, idle_timeout_ms: 300 })
 
 `endpoint` chooses the transport: `tcp://` is implemented; `ws/udp/kcp/mqtt` are planned and
 plug in through `registerRemoteScheme(scheme, connector)`. `port_id` selects a device port
-when the bridge exposes more than one; `token` is sent in the `HELLO` frame.
+when the bridge exposes more than one; `token` is sent in the `HELLO` frame. The bridge
+prints its NVS-generated token once at boot (`bridge_auth: auth token from NVS: ...`) and
+includes it in the provisioning QR when provisioning is active.
+
+### Remote log semantics
+
+- `log_query` `order:"desc"` starts from the newest RAM entries; `ram_earliest_seq` is the
+  oldest live-window entry, while `sd_earliest_seq`/`log_stats.segments[]` describe the SD
+  segment(s). They are different seq spaces.
+- `contains`/`regex` scan up to 20 RAM pages (bounded); they are not a full SD search. Use
+  `log_export` for historical full-text work. `time_from/time_to` are ignored on remote
+  because the device currently exposes uptime ticks, not epoch time.
+- `line`/`hex` in `log_query` are capped by the device (`log_line_max_bytes`, default 192);
+  `bytes` is the full length. `log_export` writes the raw bytes.
+- `log_stats.segments[]` lists every segment with `first_seq/latest_seq/active`; `log_export`
+  accepts `segment` to export a specific segment (default: active).
+- `log_clear` with no `connection_id` requires `confirm:true` and clears local + all remote
+  current logs; remote `segment` limits the clear to one segment.
 
 ## Configuration
 
@@ -164,7 +186,11 @@ All paths use XDG defaults and can be overridden:
 - Logs are line-oriented for retrieval (`\n`, trailing `\r` stripped); TX is recorded once
   per write. Non-UTF-8 content is still available as raw hex.
 - Each log entry is `{ seq, ts, conn, dir, offset, line, hex, bytes }`. `seq` is per log
-  source; the hub never renumbers it.
+  source; the hub never renumbers it. For remote SD history, seq is **per segment**;
+  `log_stats.segments[]` gives each segment's range and `log_export` takes `segment`.
+- Remote SD logs resume the newest complete segment on boot/remount; segment rotation is
+  controlled by `CONFIG_BRIDGE_SD_SEGMENT_MAX_MB` (default 3072) to stay below FAT32's 4 GiB
+  per-file limit.
 
 ## Design
 

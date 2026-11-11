@@ -1,6 +1,6 @@
 # serial-hub-mcp 串口 Hub 架构
 
-> 状态：设计已定；host 侧 `tcp` 远端链路与假桥已实现，ESP32 桥固件待做。
+> 状态：host 侧 `tcp` 远端链路、假桥与 ESP32-S3 桥固件（SD 分段续写/认证/事件）均已实现。
 > 配套契约见 [remote-link-protocol.md](./remote-link-protocol.md)（**v0 已定稿**）。
 
 ## 1. 目标
@@ -105,8 +105,9 @@ UART TX ◄──── WRITE / TRANSACT（host 发起），镜像进 SD 日志�
 ### 5.2 seq 归属：per-source，hub 不改号
 
 - 本地连接：host `LogStore` 生成全局单调 `seq`（现状）。
-- 远端连接：**设备生成** per-source 单调 `log_seq`，hub 原样透出。
-- 查询游标用 **`(connection_id, seq)` 复合键**；跨源查询**不按 seq 归并**，按连接分块。
+- 远端连接：**设备生成** per-segment 的 `log_seq`，hub 原样透出；`LOG_STATS.segments[]`
+  给出每段范围，跨段导出必须带 `segment`。活动段内 seq 连续，但不保证跨段全局唯一。
+- 查询游标用 **`(connection_id, segment?, seq)` 复合键**；跨源查询**不按 seq 归并**，按连接分块。
 - `earliest_seq` / `retention` 必须来自对应 source。
 - 字节级游标（`READ`/`transact` 屏障）用 `offset`，与 `log_seq` 是两个独立空间。
 
@@ -149,7 +150,7 @@ host 提取时复用与本地相同的切行器，生成 5.1 的条目 → **契
 | 工具 | 语义 | 现状 |
 |---|---|---|
 | `list_endpoints` | 发现/列出远端桥 | 未实现 |
-| `log_export` | 从设备权威日志按 `seq/方向` 分页导出到 host 文件 | 已实现（`RemoteLogStore.export`，远端 SD） |
+| `log_export` | 从设备权威日志按 `segment/seq/方向` 分页导出到 host 文件 | 已实现（默认活动段；`log_stats.segments[]` 选段） |
 | `log_query` 扩展 | 增加 `cursor/next_seq` 分页 | 远端已支持（工具参数 `cursor`） |
 | `event_query` | 设备控制面事件（SD/ring 故障） | 已实现（`EVENT_QUERY`） |
 

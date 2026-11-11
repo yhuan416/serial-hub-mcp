@@ -1,7 +1,7 @@
 # 远端串口链路协议 v0（定稿）
 
-> 状态：**v0 已定稿**。host 侧 `tcp` 适配器与假桥（`test-utils/fake_bridge.js`）已实现并通过端到端测试；
-> ESP32 固件待做，`udp/kcp/mqtt/ws` 与压缩为 v1 备选。
+> 状态：**v0 已定稿**。host 侧 `tcp` 适配器、假桥与 ESP32-S3 固件（`serial-hub-bridge`）
+> 已实现；`udp/kcp/mqtt/ws` 与压缩为 v1 备选。
 > 架构背景见 [hub-architecture.md](./hub-architecture.md)。
 
 本文是 host（serial-hub-mcp）与远端串口桥（ESP32-S3 等）之间的**唯一事实源**。
@@ -68,7 +68,8 @@ READY ── CONFIG/WRITE/READ/TRANSACT/SET_LINES/BREAK/LOG_* /PING
 ```
 
 - 设备侧 token 由部署配置（不在协议里下发）。比较使用常量时间。
-- 设备未配置 token 时：`caps.auth=false`，接受空/任意 token；host 应在 `get_status` 中提示。
+- 设备首次启动会生成 16 字节随机 token 存入 NVS（或由 `CONFIG_BRIDGE_AUTH_TOKEN` 覆盖），
+  `caps.auth=true`；token 打印在串口启动日志，配网 QR 也带 `token` 字段。
 - 鉴权失败：回 `{"code":"unauthorized"}` 并关闭；建议设备做失败次数限制。
 - **v0 不加密**。跨不可信网络必须走 VPN/SSH 隧道；`tls://` scheme 预留给后续。
 
@@ -109,7 +110,7 @@ READY ── CONFIG/WRITE/READ/TRANSACT/SET_LINES/BREAK/LOG_* /PING
     "can_set_lines": true,
     "can_break": true,
     "can_config": true,
-    "log_filter": ["seq", "time", "dir"],
+    "log_filter": ["seq", "dir"],
     "log_storage": "raw+index",
     "binary_frames": false
   },
@@ -242,13 +243,18 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
   "entries":[{"seq":123,"ts":1760000000123,"dir":"rx","offset":1000,
               "line":"OK","hex":"4f4b","bytes":2}],
   "count":1,"truncated":false,"next_cursor":"123","earliest_seq":100,
+  "ram_earliest_seq":100,"ram_latest_seq":123,"ram_count":24,
+  "sd_earliest_seq":1,"sd_latest_seq":4567,
   "retention":{"capacity_bytes":21474836480,"used_bytes":1048576,"evicted_lines":null},
-  "source":"device","authoritative":true,"time_source":"ntp"
+  "source":"device","authoritative":true,"time_source":"tick"
 }}
 ```
 
-- 设备保证支持 `seq/time/dir` 与游标分页（`cursor` → `next_cursor`）。
-- `contains/regex` 仅当在 `caps.log_filter` 内才下发；否则 host 拉取后本地过滤。
+- 设备保证支持 `seq/dir` 与游标分页（`cursor` → `next_cursor`）；`time` 暂不支持
+  （设备当前只有 uptime tick）。
+- `contains/regex` 不在 `caps.log_filter` 内，host 分页拉取后本地过滤（有页数上限）。
+- `earliest_seq` 是 RAM 窗口起点；响应另带 `ram_earliest_seq/ram_latest_seq` 与
+  `sd_earliest_seq/sd_latest_seq`，三者不可混用。
 - 跨源查询由 hub 按 `connection_id` 分块，**不按 seq 归并**。
 
 ### LOG_STATS
@@ -258,8 +264,13 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
 → {"id":31,"ok":true,"result":{
   "capacity_bytes":21474836480,"used_bytes":1048576,
   "earliest_seq":100,"latest_seq":4567,
-  "ring":{"bytes":262144,"used":1024,"start_offset":980,"end_offset":1013,"dropped_bytes":0},
-  "time":{"synced":true,"source":"ntp"}
+  "ram_earliest_seq":4500,"ram_latest_seq":4567,"ram_count":68,
+  "sd_earliest_seq":100,"sd_latest_seq":4567,"global_latest_seq":4567,
+  "segment":"00000000-82de",
+  "segments":[{"id":"00000000-82de","raw_bytes":1048576,"index_count":4467,
+               "first_seq":100,"latest_seq":4567,"active":true}],
+  "ring":{"bytes":4194304,"used":1024,"start_offset":980,"end_offset":1013,"dropped_bytes":0},
+  "time":{"synced":false,"source":"tick"}
 }}
 ```
 
@@ -267,23 +278,31 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
 
 ```json
 {"id":32,"op":"LOG_CLEAR","port":"uart0"}
-→ {"id":32,"ok":true,"result":{"cleared":true}}
+→ {"id":32,"ok":true,"result":{"cleared":true,"sd_cleared":true,"ram_cleared":true,
+                                "active_cleared":true}}
+
+{"id":32,"op":"LOG_CLEAR","port":"uart0","segment":"00000000-82de"}
+→ {"id":32,"ok":true,"result":{"cleared":true,"sd_cleared":true,"ram_cleared":false,
+                                "active_cleared":false,"segment":"00000000-82de"}}
 ```
+- 省略 `segment`（或 `"all"`/`"*"`）清空所有 segment，并把 seq 归零；指定 segment 只清该段。
 
 ### LOG_EXPORT（按段导出原始字节 + 索引，host 侧还原条目）
 
 ```json
 {"id":33,"op":"LOG_EXPORT","port":"uart0","dir":"rx",
- "seq_from":100,"seq_to":null,"time_from":null,"time_to":null,
+ "segment":"00000000-82de","seq_from":100,"seq_to":null,"time_from":null,"time_to":null,
  "cursor":null,"max_bytes":65536}
 → {"id":33,"ok":true,"result":{
   "chunk_b64":"...",
   "index_b64":"...",
+  "segment":"00000000-82de",
   "bytes":65536,"next_cursor":"...","eof":false
 }}
 ```
 
-- `index_b64` 解码后是索引记录（建议定长）：`{offset, seq, tick_ms, dir}`。
+- `index_b64` 解码后是索引记录（建议定长）：`{offset, seq, tick_ms, dir}`；`offset` 是
+  **segment 内**偏移。`segment` 省略时导出当前活动段。
 - host 用与本地**相同**的切行器把 `chunk + index` 还原成条目 schema。
 - 大流量/历史导出走这里；`max_bytes` 建议 16–64 KiB（受 `caps.max_frame` 约束）。
 

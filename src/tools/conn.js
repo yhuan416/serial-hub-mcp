@@ -117,13 +117,16 @@ export const connTools = (manager) => [
         .enum(["serial", "remote"])
         .optional()
         .describe(
-          "链路类型：serial=本机串口（默认）；remote=ESP32 无线串口桥（契约已定，当前未实现）",
+          "链路类型：serial=本机串口（默认）；remote=ESP32 无线串口桥（token 鉴权，需 endpoint）",
         ),
       endpoint: z
         .string()
         .optional()
         .describe("远端地址（transport=remote 时必填），如 tcp://esp32s3-01:7000"),
-      token: z.string().optional().describe("远端鉴权 token（transport=remote 时可选）"),
+      token: z
+        .string()
+        .optional()
+        .describe("远端鉴权 token（transport=remote 必填；桥启动日志/配网 QR 可见）"),
       port_id: z.string().optional().describe("远端设备端口 ID（多端口设备用；缺省由设备选择）"),
       port: z.string().optional().describe("串口路径，如 /dev/ttyUSB0、/dev/ttyACM0、COM3"),
       profile: z

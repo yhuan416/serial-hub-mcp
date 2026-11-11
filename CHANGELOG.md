@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+- Remote `log_query` fixes: `order:"desc"` now starts from the newest RAM window and returns
+  a usable older-page cursor; `ram_earliest_seq` and `sd_earliest_seq` are reported
+  separately; `contains`/`regex` page through the RAM window (bounded) instead of filtering
+  only the first page.
+- Queries/stats/clear without `connection_id` now aggregate local and all remote backends.
+  Full clear requires `confirm:true`; remote `log_clear` accepts `segment`.
+- SD segment persistence: resume the newest complete segment on boot/remount, scan/expose
+  `segments[]`, export by `segment`, clear all or one segment, and rotate at
+  `CONFIG_BRIDGE_SD_SEGMENT_MAX_MB`.
+- Remote auth: NVS-generated per-device token (or Kconfig override), constant-time HELLO
+  check, token included in the provisioning QR/log. v0 remains plaintext; use VPN/SSH.
+
 ## 0.1.0
 
 Initial open-source release.

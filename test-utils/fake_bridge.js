@@ -361,6 +361,12 @@ export class FakeBridge {
           used_bytes: st.ring.length,
           earliest_seq: st.log.length ? st.log[0].seq : null,
           latest_seq: st.logSeq,
+          ram_earliest_seq: st.log.length ? st.log[0].seq : null,
+          ram_latest_seq: st.logSeq,
+          ram_count: st.log.length,
+          sd_earliest_seq: st.log.length ? st.log[0].seq : null,
+          sd_latest_seq: st.logSeq,
+          global_latest_seq: st.logSeq,
           ring: {
             bytes: this.ringLimit,
             used: st.ring.length,
@@ -374,6 +380,7 @@ export class FakeBridge {
       case "LOG_QUERY": {
         let entries = st.log;
         if (msg.dir) entries = entries.filter((e) => e.dir === msg.dir);
+        if (msg.cursor) entries = entries.filter((e) => e.seq > Number(msg.cursor));
         if (Number.isFinite(msg.seq_from)) entries = entries.filter((e) => e.seq >= msg.seq_from);
         if (Number.isFinite(msg.seq_to)) entries = entries.filter((e) => e.seq <= msg.seq_to);
         const limit = msg.limit ?? 100;
@@ -384,6 +391,11 @@ export class FakeBridge {
           truncated: entries.length > page.length,
           next_cursor: page.length ? String(page[page.length - 1].seq) : null,
           earliest_seq: st.log.length ? st.log[0].seq : null,
+          ram_earliest_seq: st.log.length ? st.log[0].seq : null,
+          ram_latest_seq: st.logSeq,
+          ram_count: st.log.length,
+          sd_earliest_seq: st.log.length ? st.log[0].seq : null,
+          sd_latest_seq: st.logSeq,
           source: "device",
           authoritative: true,
           time_source: "fake",
@@ -392,7 +404,7 @@ export class FakeBridge {
       }
       case "LOG_CLEAR":
         st.log = [];
-        this._reply(st, id, { cleared: true });
+        this._reply(st, id, { cleared: true, segment: msg.segment || null });
         return;
       case "LOG_EXPORT":
         this._reply(st, id, {
@@ -401,6 +413,7 @@ export class FakeBridge {
           bytes: 0,
           next_cursor: null,
           eof: true,
+          segment: msg.segment || "fake",
         });
         return;
       case "CLOSE":

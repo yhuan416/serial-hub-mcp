@@ -13,6 +13,15 @@ import os from "node:os";
 import path from "node:path";
 
 const INDEX_REC_BYTES = 20; // offset(u64) seq(u32) tick(u32) len(u16) dir(u8) pad
+const QUERY_PAGE_MAX = 500;
+const QUERY_SCAN_PAGES_MAX = 20;
+
+function firstNumber(...values) {
+  for (const v of values) {
+    if (Number.isFinite(v)) return v;
+  }
+  return null;
+}
 
 function defaultDumpsDir() {
   const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
@@ -55,40 +64,226 @@ export class RemoteLogStore {
   // ── 查询接口 ──────────────────────────────────────────────
   /**
    * Proxy LOG_QUERY. The device keeps a RAM line index; historical data is
-   * exported with LOG_EXPORT. contains/regex are filtered locally.
+   * exported with LOG_EXPORT. contains/regex are filtered locally, so they may
+   * scan multiple RAM pages (bounded) rather than only the first page.
    * time_from/time_to are accepted but ignored: the device ts is uptime tick.
+   *
+   * `order:"desc"` without seq_to/seq_from starts from the newest RAM window
+   * and returns newest-first, not the oldest retained window.
    */
   async query(opts = {}) {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
-    const params = this._portParams({
-      ...(opts.dir ? { dir: opts.dir } : {}),
-      ...(Number.isFinite(opts.seq_from) ? { seq_from: opts.seq_from } : {}),
-      ...(Number.isFinite(opts.seq_to) ? { seq_to: opts.seq_to } : {}),
-      ...(opts.cursor ? { cursor: String(opts.cursor) } : {}),
+    const order = opts.order === "desc" ? "desc" : "asc";
+    const contains = opts.contains || null;
+    const regex = opts.regex ? new RegExp(opts.regex) : null;
+    const hasFilter = Boolean(contains || regex);
+    const seqFrom = Number.isFinite(opts.seq_from) ? opts.seq_from : undefined;
+    const seqTo = Number.isFinite(opts.seq_to) ? opts.seq_to : undefined;
+
+    // desc needs the newest seq; content filters need the RAM window bounds.
+    const st = order === "desc" || hasFilter ? await this.stats().catch(() => null) : null;
+    const ramEarliest = firstNumber(st?.ram_earliest_seq, st?.earliest_seq, seqFrom, 1);
+    const ramLatest = firstNumber(st?.ram_latest_seq, st?.latest_seq);
+    const sdEarliest = firstNumber(st?.sd_earliest_seq, st?.earliest_seq);
+    const sdLatest = firstNumber(st?.sd_latest_seq, st?.latest_seq);
+
+    const matches = [];
+    let scanned = 0;
+    let pages = 0;
+    let truncated = false;
+    let scanTruncated = false;
+    let nextCursor = null;
+
+    const match = (e) => {
+      const line = String(e.line ?? "");
+      if (contains && !line.includes(contains)) return false;
+      if (regex && !regex.test(line)) return false;
+      return true;
+    };
+
+    if (!hasFilter) {
+      const params = {
+        ...(opts.dir ? { dir: opts.dir } : {}),
+        ...(opts.cursor ? { cursor: String(opts.cursor) } : {}),
+        ...(seqFrom != null ? { seq_from: seqFrom } : {}),
+        ...(seqTo != null ? { seq_to: seqTo } : {}),
+        limit,
+      };
+      if (order === "desc") {
+        // Cursor is the high bound (exclusive) returned by the previous page.
+        const high = opts.cursor ? Number(opts.cursor) - 1 : (seqTo ?? ramLatest);
+        if (Number.isFinite(high)) {
+          params.seq_to = high;
+          params.seq_from = Math.max(ramEarliest ?? 1, high - limit + 1, seqFrom ?? 0);
+        }
+      }
+      const res = await this.rpc.request("LOG_QUERY", this._portParams(params), 15000);
+      const entries = Array.isArray(res.entries) ? res.entries.slice() : [];
+      if (order === "desc") entries.reverse();
+      const oldest = entries.length ? entries[entries.length - 1].seq : null;
+      const hasOlder =
+        order === "desc" && oldest != null && (ramEarliest == null || oldest > ramEarliest);
+      return this._queryResult({
+        res,
+        entries,
+        limit,
+        order,
+        ramEarliest: firstNumber(res.ram_earliest_seq, res.earliest_seq, ramEarliest),
+        ramLatest: firstNumber(res.ram_latest_seq, ramLatest),
+        sdEarliest: firstNumber(res.sd_earliest_seq, sdEarliest),
+        sdLatest: firstNumber(res.sd_latest_seq, sdLatest),
+        scanned: entries.length,
+        pages: 1,
+        truncated: Boolean(res.truncated) || hasOlder,
+        scanTruncated: false,
+        nextCursor: order === "desc" ? (hasOlder ? oldest - 1 : null) : (res.next_cursor ?? null),
+        opts,
+      });
+    }
+
+    if (order === "asc") {
+      let cursor = opts.cursor ? String(opts.cursor) : undefined;
+      let start = seqFrom;
+      while (matches.length < limit && pages < QUERY_SCAN_PAGES_MAX) {
+        const res = await this.rpc.request(
+          "LOG_QUERY",
+          this._portParams({
+            ...(opts.dir ? { dir: opts.dir } : {}),
+            ...(cursor ? { cursor } : start != null ? { seq_from: start } : {}),
+            ...(seqTo != null ? { seq_to: seqTo } : {}),
+            limit: QUERY_PAGE_MAX,
+          }),
+          15000,
+        );
+        pages += 1;
+        const entries = Array.isArray(res.entries) ? res.entries : [];
+        scanned += entries.length;
+        for (const e of entries) {
+          if (matches.length >= limit) break;
+          if (match(e)) matches.push(e);
+        }
+        if (matches.length >= limit) {
+          truncated = true;
+          nextCursor = entries.length ? entries[entries.length - 1].seq : null;
+          break;
+        }
+        if (!res.truncated || !res.next_cursor || entries.length === 0) {
+          nextCursor = null;
+          break;
+        }
+        cursor = String(res.next_cursor);
+        start = undefined;
+      }
+      if (pages >= QUERY_SCAN_PAGES_MAX && matches.length >= limit) {
+        scanTruncated = true;
+        truncated = true;
+      }
+    } else {
+      // Backward scan windows from newest to oldest; bounded by RAM window and pages.
+      let high = seqTo ?? (opts.cursor ? Number(opts.cursor) - 1 : ramLatest);
+      const floor = ramEarliest ?? 1;
+      while (
+        high != null &&
+        high >= floor &&
+        matches.length < limit &&
+        pages < QUERY_SCAN_PAGES_MAX
+      ) {
+        const low = Math.max(floor, high - QUERY_PAGE_MAX + 1);
+        const res = await this.rpc.request(
+          "LOG_QUERY",
+          this._portParams({
+            ...(opts.dir ? { dir: opts.dir } : {}),
+            seq_from: low,
+            seq_to: high,
+            limit: QUERY_PAGE_MAX,
+          }),
+          15000,
+        );
+        pages += 1;
+        const entries = Array.isArray(res.entries) ? res.entries : [];
+        scanned += entries.length;
+        for (let i = entries.length - 1; i >= 0; i -= 1) {
+          if (matches.length >= limit) break;
+          if (match(entries[i])) matches.push(entries[i]);
+        }
+        if (matches.length >= limit) {
+          truncated = true;
+          nextCursor = matches[matches.length - 1].seq - 1;
+          break;
+        }
+        if (low <= floor) {
+          nextCursor = null;
+          break;
+        }
+        high = low - 1;
+      }
+      if (high != null && high >= floor && pages >= QUERY_SCAN_PAGES_MAX) {
+        scanTruncated = true;
+        truncated = true;
+        nextCursor = high;
+      }
+    }
+
+    return this._queryResult({
+      res: null,
+      entries: matches,
       limit,
+      order,
+      ramEarliest,
+      ramLatest,
+      sdEarliest,
+      sdLatest,
+      scanned,
+      pages,
+      truncated,
+      scanTruncated,
+      nextCursor,
+      opts,
     });
-    const res = await this.rpc.request("LOG_QUERY", params, 15000);
-    let entries = Array.isArray(res.entries) ? res.entries : [];
-    if (opts.contains) {
-      entries = entries.filter((e) => String(e.line ?? "").includes(opts.contains));
-    }
-    if (opts.regex) {
-      const re = new RegExp(opts.regex);
-      entries = entries.filter((e) => re.test(String(e.line ?? "")));
-    }
-    if (opts.order === "desc") entries = entries.slice().reverse();
+  }
+
+  _queryResult({
+    res,
+    entries,
+    limit,
+    order,
+    ramEarliest,
+    ramLatest,
+    sdEarliest,
+    sdLatest,
+    scanned,
+    pages,
+    truncated,
+    scanTruncated,
+    nextCursor,
+    opts,
+  }) {
     return {
       connection_id: this.id,
       transport: "remote",
       source: "device",
       authoritative: true,
-      storage: res.storage,
+      storage: res?.storage,
       entries,
       count: entries.length,
-      truncated: Boolean(res.truncated),
-      next_cursor: res.next_cursor ?? null,
-      earliest_seq: res.earliest_seq,
-      time_source: res.time_source,
+      truncated,
+      next_cursor: nextCursor,
+      // `earliest_seq` is kept for old clients; it is the RAM window start.
+      earliest_seq: ramEarliest,
+      ram_earliest_seq: ramEarliest,
+      ram_latest_seq: ramLatest,
+      sd_earliest_seq: sdEarliest,
+      sd_latest_seq: sdLatest,
+      scanned,
+      pages,
+      scan_truncated: scanTruncated,
+      time_source: res?.time_source ?? "tick",
+      query: {
+        limit,
+        order,
+        ...(opts.contains ? { contains: opts.contains } : {}),
+        ...(opts.regex ? { regex: opts.regex } : {}),
+      },
       ...(opts.time_from != null || opts.time_to != null
         ? { time_filter: "ignored (device clock is uptime tick)" }
         : {}),
@@ -106,8 +301,14 @@ export class RemoteLogStore {
     };
   }
 
-  async clear() {
-    const res = await this.rpc.request("LOG_CLEAR", this._portParams(), 15000);
+  async clear(connection_id, opts = {}) {
+    // Called both directly (store.clear()) and via LogRouter.clear(id, opts).
+    const o = connection_id && typeof connection_id === "object" ? connection_id : opts;
+    const res = await this.rpc.request(
+      "LOG_CLEAR",
+      this._portParams({ ...(o.segment ? { segment: o.segment } : {}) }),
+      15000,
+    );
     return {
       connection_id: this.id,
       transport: "remote",
@@ -152,6 +353,7 @@ export class RemoteLogStore {
     const maxBytes = Math.min(Math.max(opts.max_bytes ?? 32768, 256), 65536);
     const seqFrom = Number.isFinite(opts.seq_from) ? opts.seq_from : undefined;
     const seqTo = Number.isFinite(opts.seq_to) ? opts.seq_to : undefined;
+    const segment = opts.segment ? String(opts.segment) : undefined;
 
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -164,6 +366,7 @@ export class RemoteLogStore {
     let lines = 0;
     let firstSeq = null;
     let lastSeq = null;
+    let actualSegment = segment ?? null;
     let eof = false;
 
     try {
@@ -174,6 +377,7 @@ export class RemoteLogStore {
             dir,
             ...(seqFrom != null ? { seq_from: seqFrom } : {}),
             ...(seqTo != null ? { seq_to: seqTo } : {}),
+            ...(segment ? { segment } : {}),
             cursor,
             max_bytes: maxBytes,
           }),
@@ -181,6 +385,7 @@ export class RemoteLogStore {
         );
         const chunk = Buffer.from(res.chunk_b64 || "", "base64");
         const index = Buffer.from(res.index_b64 || "", "base64");
+        if (res.segment) actualSegment = res.segment;
         bytes += chunk.length;
 
         for (let o = 0; o + INDEX_REC_BYTES <= index.length; o += INDEX_REC_BYTES) {
@@ -214,6 +419,7 @@ export class RemoteLogStore {
       authoritative: true,
       path: file,
       dir,
+      segment: actualSegment,
       bytes,
       lines,
       pages,

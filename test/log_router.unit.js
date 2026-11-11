@@ -79,3 +79,78 @@ test("无本地后端且未绑定 → 查询报错", () => {
   assert.throws(() => router.query({ connection_id: "x" }), /日志功能未启用/);
   assert.doesNotThrow(() => router.addData("x", Buffer.from("a")));
 });
+
+test("全查聚合本地 + 远端，并可显式全量清理", async () => {
+  const local = {
+    calls: [],
+    addData() {},
+    addTx() {},
+    unregister() {},
+    currentPartial() {
+      return null;
+    },
+    async query(opts) {
+      this.calls.push(["query", opts]);
+      return {
+        entries: [{ seq: 1, conn: "c1", line: "local" }],
+        count: 1,
+        truncated: false,
+        earliest_seq: 1,
+      };
+    },
+    async stats() {
+      return { total: 1, connections: [{ connection_id: "c1", total: 1 }] };
+    },
+    async clear() {
+      this.calls.push(["clear"]);
+      return { cleared: true };
+    },
+  };
+  const remote = {
+    calls: [],
+    addData() {},
+    addTx() {},
+    unregister() {},
+    currentPartial() {
+      return null;
+    },
+    async query(opts) {
+      this.calls.push(["query", opts]);
+      return {
+        entries: [{ seq: 2, line: "remote" }],
+        count: 1,
+        truncated: false,
+        source: "device",
+        earliest_seq: 2,
+      };
+    },
+    async stats() {
+      return { total: 2, source: "device" };
+    },
+    async clear(id, opts) {
+      this.calls.push(["clear", id, opts]);
+      return { cleared: true };
+    },
+  };
+  const router = new LogRouter(local);
+  router.bind("r1", remote);
+
+  const q = await router.query({});
+  assert.equal(q.scope, "all");
+  assert.equal(q.count, 2);
+  assert.deepEqual(
+    q.entries.map((e) => e.connection_id ?? e.conn),
+    ["c1", "r1"],
+  );
+  assert.equal(q.sources.length, 2);
+
+  const st = await router.stats();
+  assert.equal(st.scope, "all");
+  assert.equal(st.total, 3);
+  assert.equal(st.remote.length, 1);
+
+  await assert.rejects(router.clear(), /confirm=true/);
+  const c = await router.clear(undefined, { confirm: true });
+  assert.equal(c.cleared.length, 2);
+  assert.deepEqual(remote.calls.at(-1), ["clear", "r1", { confirm: true }]);
+});

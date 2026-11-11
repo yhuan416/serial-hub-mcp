@@ -16,7 +16,8 @@ export const logTools = (logStore) => {
         "检索串口日志条目。日志按行切分（\\n / \\r\\n），每条含全局 seq 索引、epoch 时间戳 ts、方向 dir(rx/tx)、内容 line/hex/bytes。" +
         "支持按连接、方向、索引范围(seq_from/seq_to)、时间范围(time_from/time_to)、内容子串(contains)、正则(regex)过滤。" +
         "本地连接查 host LogStore（内存+JSONL 分片）；远端连接代理设备 LOG_QUERY（RAM 窗口，历史用 log_export）。" +
-        "返回 entries（含 count/truncated）与 earliest_seq/retention（earliest_seq 之后的历史才完整，淘汰过的更早部分不可回溯）。",
+        "远端 order=desc 默认从最新开始；contains/regex 会分页扫描 RAM 窗口（有上限），time_from/time_to 暂不支持（设备无 NTP）。" +
+        "返回 entries（含 count/truncated）与 earliest_seq；远端另给 ram_earliest_seq/sd_earliest_seq，二者含义不同。",
       inputSchema: z.object({
         connection_id: connId.optional().describe("连接 ID；省略则全查"),
         dir: z.enum(["rx", "tx"]).optional().describe("方向过滤"),
@@ -49,6 +50,10 @@ export const logTools = (logStore) => {
         seq_to: z.number().int().optional().describe("结束 seq（含）"),
         time_from: z.number().int().optional().describe("（暂忽略，设备无 NTP）"),
         time_to: z.number().int().optional().describe("（暂忽略，设备无 NTP）"),
+        segment: z
+          .string()
+          .optional()
+          .describe("SD segment ID；省略导出当前活动 segment（log_stats.segments 查看）"),
         path: z.string().optional().describe("输出文件路径（优先于 out_dir）"),
         out_dir: z.string().optional().describe("输出目录（path 未给时用）"),
         max_bytes: z
@@ -84,7 +89,7 @@ export const logTools = (logStore) => {
       name: "log_stats",
       title: "串口日志统计",
       description:
-        "查看日志存储统计：各连接的日志总条数、内存/磁盘分布、分区/淘汰信息、时间范围、目录路径；省略 connection_id 则给出全局汇总。",
+        "查看日志存储统计：各连接的日志总条数、内存/磁盘分布、分区/淘汰信息、时间范围、目录路径；省略 connection_id 时聚合本地与所有远端连接。",
       inputSchema: z.object({
         connection_id: connId.optional().describe("连接 ID；省略则全查"),
       }),
@@ -97,13 +102,17 @@ export const logTools = (logStore) => {
     defineTool({
       name: "log_clear",
       title: "清空串口日志",
-      description: "清空指定连接（或全部）的日志：内存 + 已落盘文件。清空后不可恢复，谨慎使用。",
+      description:
+        "清空指定连接的日志：本地为内存 + 已落盘文件；远端省略 segment 会清空设备所有 segment 和 RAM，指定 segment 只清该段。清空后不可恢复。" +
+        "省略 connection_id 会清空本地 + 所有远端，必须显式传 confirm=true。",
       inputSchema: z.object({
-        connection_id: connId.optional().describe("连接 ID；省略则清空全部日志"),
+        connection_id: connId.optional().describe("连接 ID；省略则清空本地与所有远端"),
+        segment: z.string().optional().describe("远端 SD segment ID；省略清空设备当前活动 segment"),
+        confirm: z.boolean().optional().describe("全量清空（不传 connection_id）时必须为 true"),
       }),
       handler: async (args) => ({
         ok: true,
-        response: await requireStore().clear(args.connection_id),
+        response: await requireStore().clear(args.connection_id, args),
       }),
     }),
   ];

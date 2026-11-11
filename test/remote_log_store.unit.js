@@ -42,6 +42,10 @@ function mockConn() {
           used_bytes: 100,
           earliest_seq: 1,
           latest_seq: 3,
+          ram_earliest_seq: 1,
+          ram_latest_seq: 3,
+          sd_earliest_seq: 1,
+          sd_latest_seq: 3,
           ring: { used: 10, dropped_bytes: 0 },
         };
       }
@@ -85,17 +89,18 @@ test("RemoteLogStore: query / stats / clear proxy to device", async () => {
     q.entries.map((e) => e.seq),
     [1, 3],
   );
-  assert.equal(calls[0].op, "LOG_QUERY");
-  assert.equal(calls[0].params.dir, "rx");
+  assert.equal(calls[0].op, "LOG_STATS");
+  assert.equal(calls[1].op, "LOG_QUERY");
+  assert.equal(calls[1].params.dir, "rx");
 
   const st = await store.stats();
   assert.equal(st.storage, "raw+index");
   assert.equal(st.capacity_bytes, 1000);
-  assert.equal(calls[1].op, "LOG_STATS");
+  assert.equal(calls[2].op, "LOG_STATS");
 
   const cl = await store.clear();
   assert.equal(cl.cleared, true);
-  assert.equal(calls[2].op, "LOG_CLEAR");
+  assert.equal(calls[3].op, "LOG_CLEAR");
 });
 
 test("RemoteLogStore: event_query proxies control-plane events", async () => {

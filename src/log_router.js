@@ -56,24 +56,150 @@ export class LogRouter {
   }
 
   // ── 查询侧接口（tools/log.js）──────────────────────────
-  // 指定连接时路由到该连接的后端；全查暂由本地后端承担（远端跨源聚合待实现）。
+  // 指定连接时路由到该连接的后端；省略 connection_id 时聚合本地 + 所有远端后端。
   query(opts = {}) {
     const id = opts.connection_id;
-    const b = id ? this.backendFor(id) : this.localStore;
-    if (!b) throw new Error("日志功能未启用");
-    return b.query(opts);
+    if (id) {
+      const b = this.backendFor(id);
+      if (!b) throw new Error("日志功能未启用");
+      return b.query(opts);
+    }
+    return this._queryAll(opts);
+  }
+
+  async _queryAll(opts) {
+    const entries = [];
+    const sources = [];
+    const errors = [];
+    if (this.localStore) {
+      try {
+        const r = await this.localStore.query(opts);
+        entries.push(...(Array.isArray(r.entries) ? r.entries : []));
+        sources.push(this._sourceSummary(null, "local", "host", r));
+      } catch (err) {
+        errors.push({ connection_id: null, transport: "local", error: err.message });
+      }
+    }
+    for (const [cid, b] of this.byConn) {
+      if (!b || b === this.localStore) continue;
+      try {
+        const r = await b.query({ ...opts, connection_id: cid });
+        const list = Array.isArray(r.entries) ? r.entries : [];
+        for (const e of list) entries.push({ ...e, connection_id: cid });
+        sources.push(this._sourceSummary(cid, "remote", r.source ?? "device", r));
+      } catch (err) {
+        errors.push({ connection_id: cid, transport: "remote", error: err.message });
+      }
+    }
+    if (!this.localStore && this.byConn.size === 0) throw new Error("日志功能未启用");
+    return {
+      scope: "all",
+      entries,
+      count: entries.length,
+      truncated: sources.some((s) => s.truncated),
+      sources,
+      errors,
+    };
+  }
+
+  _sourceSummary(connection_id, transport, source, r) {
+    return {
+      connection_id,
+      transport,
+      source,
+      count: r.count ?? 0,
+      truncated: Boolean(r.truncated),
+      earliest_seq: r.earliest_seq ?? null,
+      ram_earliest_seq: r.ram_earliest_seq ?? null,
+      sd_earliest_seq: r.sd_earliest_seq ?? null,
+      storage: r.storage,
+    };
   }
 
   stats(connection_id) {
-    const b = connection_id ? this.backendFor(connection_id) : this.localStore;
-    if (!b) throw new Error("日志功能未启用");
-    return b.stats(connection_id);
+    if (connection_id) {
+      const b = this.backendFor(connection_id);
+      if (!b) throw new Error("日志功能未启用");
+      return b.stats(connection_id);
+    }
+    return this._statsAll();
   }
 
-  clear(connection_id) {
-    const b = connection_id ? this.backendFor(connection_id) : this.localStore;
-    if (!b) throw new Error("日志功能未启用");
-    return b.clear(connection_id);
+  async _statsAll() {
+    const remote = [];
+    const sources = [];
+    const errors = [];
+    let local = null;
+    if (this.localStore) {
+      try {
+        local = await this.localStore.stats();
+        sources.push({ connection_id: null, transport: "local", source: "host", ...local });
+      } catch (err) {
+        errors.push({ connection_id: null, transport: "local", error: err.message });
+      }
+    }
+    for (const [cid, b] of this.byConn) {
+      if (!b || b === this.localStore) continue;
+      try {
+        const r = await b.stats(cid);
+        remote.push(r);
+        sources.push({
+          connection_id: cid,
+          transport: "remote",
+          source: r.source ?? "device",
+          ...r,
+        });
+      } catch (err) {
+        errors.push({ connection_id: cid, transport: "remote", error: err.message });
+      }
+    }
+    if (!local && remote.length === 0 && errors.length === 0) {
+      throw new Error("日志功能未启用");
+    }
+    const total = (local?.total ?? 0) + remote.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+    return {
+      scope: "all",
+      ...(local || {}),
+      total,
+      remote,
+      sources,
+      errors,
+    };
+  }
+
+  clear(connection_id, opts = {}) {
+    if (connection_id) {
+      const b = this.backendFor(connection_id);
+      if (!b) throw new Error("日志功能未启用");
+      return b.clear(connection_id, opts);
+    }
+    return this._clearAll(opts);
+  }
+
+  async _clearAll(opts = {}) {
+    if (opts.confirm !== true) {
+      throw new Error("全量清空需要 confirm=true（会清本地日志并清空所有远端设备当前日志）");
+    }
+    const cleared = [];
+    const errors = [];
+    if (this.localStore) {
+      try {
+        const r = await this.localStore.clear();
+        cleared.push({ connection_id: null, transport: "local", ...r });
+      } catch (err) {
+        errors.push({ connection_id: null, transport: "local", error: err.message });
+      }
+    }
+    for (const [cid, b] of this.byConn) {
+      if (!b || b === this.localStore) continue;
+      try {
+        const r = await b.clear(cid, opts);
+        cleared.push({ connection_id: cid, transport: "remote", ...r });
+      } catch (err) {
+        errors.push({ connection_id: cid, transport: "remote", error: err.message });
+      }
+    }
+    return { scope: "all", cleared, errors };
   }
 
   export(opts = {}) {
