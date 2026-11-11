@@ -22,12 +22,14 @@ line for retrieval, but the raw hex is always the source of truth.
 - **Profiles**: save connection parameters and reuse them with `open({profile})`.
 - **Hub-ready concurrency**: calls are serialized per `connection_id` and run concurrently
   across different connections.
-- **Remote link seam**: `open({transport:"remote", endpoint:"tcp://host:port"})` is part of
-  the public contract. The RPC contract is defined; the ESP32 bridge adapter is not yet
-  implemented.
+- **Remote link (TCP)**: `open({transport:"remote", endpoint:"tcp://host:port"})` speaks the
+  v0 NDJSON RPC contract (`HELLO/READ/TRANSACT/LOG_*`) to an ESP32-style bridge. On-demand
+  pull, device-side offsets, and a `transact` barrier that excludes pre-write bytes.
+  The ESP32 firmware is not included yet; `test-utils/fake_bridge.js` implements the protocol
+  for end-to-end tests. Other schemes (`ws/udp/kcp/mqtt`) plug in via the scheme registry.
 
-> Status: `0.1.x` — local serial is production-ready; the remote bridge contract and
-> endpoint registry are landing incrementally.
+> Status: `0.1.x` — local serial is production-ready; the host-side TCP remote link is
+> implemented and tested against a fake bridge; ESP32 firmware and extra transports are next.
 
 ## Install
 
@@ -120,11 +122,14 @@ close({ connection_id: "..." })
 For remote hubs:
 
 ```text
-open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000" })
+open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000", token: "<token>" })
+transact({ connection_id: "...", data: "AT", match: "OK" })
+receive({ connection_id: "...", budget_ms: 5000, idle_timeout_ms: 300 })
 ```
 
-`endpoint` is the reserved slot for the link adapters. The planned registry maps endpoint
-schemes (`tcp`, `udp`, `kcp`, `mqtt`, `ws`, ...) to adapters; see the design docs.
+`endpoint` chooses the transport: `tcp://` is implemented; `ws/udp/kcp/mqtt` are planned and
+plug in through `registerRemoteScheme(scheme, connector)`. `port_id` selects a device port
+when the bridge exposes more than one; `token` is sent in the `HELLO` frame.
 
 ## Configuration
 
@@ -172,6 +177,9 @@ npm run lint      # eslint + prettier check
 npm run smoke     # MCP handshake + tool enumeration only
 npm run smoke:http
 ```
+
+The remote-link tests start an in-process v0 bridge (`test-utils/fake_bridge.js`) over TCP,
+so they need neither hardware nor network access.
 
 ## License
 

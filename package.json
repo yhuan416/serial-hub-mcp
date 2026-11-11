@@ -41,8 +41,8 @@
     "smoke": "node test/server.smoke.js",
     "smoke:http": "node --test test/http.smoke.js",
     "lint": "eslint . && npm run format:check",
-    "format": "prettier --write \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
-    "format:check": "prettier --check \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
+    "format": "prettier --write \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" \"test-utils/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
+    "format:check": "prettier --check \"src/**/*.{js,mjs,cjs}\" \"test/**/*.{js,mjs,cjs}\" \"test-utils/**/*.{js,mjs,cjs}\" --no-error-on-unmatched-pattern",
     "test:ci": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=report.xml"
   },
   "dependencies": {

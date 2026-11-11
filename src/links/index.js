@@ -1,13 +1,11 @@
-// 链路工厂 + 注册表。
+// 本地链路工厂 + 注册表。
 //
-// transport 是「链路类别」：serial（本机）/ remote（远端桥）。
-// 远端桥的 endpoint 以 scheme 细分（tcp/udp/kcp/mqtt/ws...）；scheme → adapter 的注册
-// 在 remote.js 内维护，后续新增传输只注册，不改 open/tool 层。
+// transport 是「链路类别」：serial（本机，走本注册表）/ remote（远端桥，
+// 由 src/remote/connection.js + links/remote.js 的 scheme 注册表处理）。
 //
 // 详见 docs/hub-architecture.md「端点模板注册」。
 
 import { createSerialLink, DEFAULT_BAUD, FLOW_MAP, TRANSPORTS } from "./serial.js";
-import { createRemoteLink } from "./remote.js";
 
 export { DEFAULT_BAUD, FLOW_MAP, TRANSPORTS };
 
@@ -33,6 +31,9 @@ export function listLinks() {
  */
 export function createLink(cfg) {
   const transport = cfg.transport ?? "serial";
+  if (transport === "remote") {
+    throw new Error("remote 链路由 src/links/remote.js 的 scheme 注册表创建");
+  }
   const factory = registry.get(transport);
   if (!factory) {
     throw new Error(`未知 transport: ${transport}，可用: ${listLinks().join(" | ")}`);
@@ -41,4 +42,3 @@ export function createLink(cfg) {
 }
 
 registerLink("serial", createSerialLink);
-registerLink("remote", createRemoteLink);

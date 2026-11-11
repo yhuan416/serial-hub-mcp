@@ -28,7 +28,11 @@ Node.js >= 18 is required. On Linux you do **not** need a serial device to run t
   (`on('data'|'error'|'close')`, `open/close/write/drain/flush/set`, `path`).
 - New transports are added through the registries:
   - local link: `registerLink(name, factory)` in `src/links/index.js`
-  - remote scheme: `registerRemoteScheme(scheme, factory)` in `src/links/remote.js`
+  - remote scheme: `registerRemoteScheme(scheme, connector)` in `src/links/remote.js`;
+    a connector establishes the link, performs `HELLO`, and returns `{ rpc, info }`.
+- `Connection` (local) and `RemoteConnection` (`src/remote/connection.js`) expose the same
+  method surface used by the tools. The v0 remote protocol is exercised end-to-end with the
+  in-process `test-utils/fake_bridge.js`; extend it when adding RPCs.
 - Keep tool schemas documented in `defineTool` (`name/title/description/inputSchema/handler`)
   and return `{ ok: true, response }`; throw for business errors.
 - Run `npm run format` before opening a PR.

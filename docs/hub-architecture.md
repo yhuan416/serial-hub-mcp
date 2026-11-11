@@ -1,6 +1,6 @@
 # serial-hub-mcp 串口 Hub 架构
 
-> 状态：设计已定，MCP 侧骨架先行；远端链路待 ESP32 桥固件。
+> 状态：设计已定；host 侧 `tcp` 远端链路与假桥已实现，ESP32 桥固件待做。
 > 配套契约见 [remote-link-protocol.md](./remote-link-protocol.md)（**v0 已定稿**）。
 
 ## 1. 目标
@@ -194,12 +194,15 @@ ws://host:8080/mcp
 ### 9.2 注册表
 
 ```js
-registerLink("tcp", { create(cfg), probe?, capabilities? });
+registerRemoteScheme("tcp", async (cfg) => {
+  // 建链 + HELLO，返回 { rpc, info }；字节面语义由 RemoteConnection 统一实现
+  return { rpc, info };
+});
 ```
 
-- `createLink(cfg)` 按 `endpoint` 的 scheme 查表；未注册时明确报错并列出可用 scheme。
-- 每个 adapter 声明 transport profile：`ordered` / `reliable` / `duplex`、`mtu`、`max_frame`、
-  是否长连接、是否需要 keepalive。
+- `createRemoteLink(cfg)` 按 `endpoint` 的 scheme 查表；未注册时明确报错并列出可用 scheme。
+- 每个 connector 声明/返回 transport profile（`info.caps`）：`max_frame`、`max_hold_ms`、
+  `can_set_lines`、`can_break` 等；是否可靠/有序由 scheme 语义决定。
 - 上层 NDJSON RPC 帧与传输无关；适配层负责分帧、重连、幂等重试与背压。
 
 ### 9.3 非请求/响应传输的适配
@@ -220,7 +223,7 @@ registerLink("tcp", { create(cfg), probe?, capabilities? });
 v0 帧格式已定稿为 **NDJSON + base64**（见链路契约），落地顺序：
 
 1. `serial`（已有）
-2. `tcp`（NDJSON，最小可用）
+2. `tcp`（**host 侧已实现**，NDJSON + 假桥端到端测试）
 3. `ws`
 4. `udp` / `kcp`（补齐可靠性/顺序说明；KCP 仍需上层 ack）
 5. `mqtt`（request/response 适配 + QoS 语义）

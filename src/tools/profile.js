@@ -6,6 +6,8 @@ import * as profiles from "../profiles.js";
 const ALLOWED = [
   "transport",
   "endpoint",
+  "token",
+  "port_id",
   "port",
   "baud_rate",
   "data_bits",
@@ -33,11 +35,13 @@ export function profileTools() {
       name: "profile_save",
       title: "保存连接 profile",
       description:
-        "把常见连接参数存为命名 profile，供 open({profile}) 一条复用。字段与 open 一致：transport/endpoint/port/baud_rate/data_bits/stop_bits/parity/flow_control/rx_buffer_size/newline/prompt/regex/note。",
+        "把常见连接参数存为命名 profile，供 open({profile}) 一条复用。字段与 open 一致：transport/endpoint/token/port_id/port/baud_rate/data_bits/stop_bits/parity/flow_control/rx_buffer_size/newline/prompt/regex/note。",
       inputSchema: z.object({
         name: z.string().min(1).describe("profile 名，如 quarkpi、uart0"),
         transport: z.enum(["serial", "remote"]).optional().describe("链路类型，默认 serial"),
         endpoint: z.string().optional().describe("远端地址（transport=remote 时用）"),
+        token: z.string().optional().describe("远端鉴权 token（可选）"),
+        port_id: z.string().optional().describe("远端设备端口 ID（可选）"),
         port: z.string().optional().describe("串口路径（可省略，open 时另行指定）"),
         baud_rate: z.number().int().positive().optional().describe("波特率，默认 115200"),
         data_bits: z.number().int().optional(),

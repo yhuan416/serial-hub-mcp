@@ -123,6 +123,8 @@ export const connTools = (manager) => [
         .string()
         .optional()
         .describe("远端地址（transport=remote 时必填），如 tcp://esp32s3-01:7000"),
+      token: z.string().optional().describe("远端鉴权 token（transport=remote 时可选）"),
+      port_id: z.string().optional().describe("远端设备端口 ID（多端口设备用；缺省由设备选择）"),
       port: z.string().optional().describe("串口路径，如 /dev/ttyUSB0、/dev/ttyACM0、COM3"),
       profile: z
         .string()
@@ -176,6 +178,9 @@ export const connTools = (manager) => [
       } else {
         if (merged.endpoint) {
           throw new Error("open: endpoint 仅用于 transport=remote（serial 用 port/sn/vid/pid）");
+        }
+        if (merged.token || merged.port_id) {
+          throw new Error("open: token/port_id 仅用于 transport=remote");
         }
         if (!merged.port) {
           if (!merged.sn && !merged.vid && !merged.pid) {

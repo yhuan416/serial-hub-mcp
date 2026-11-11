@@ -42,19 +42,10 @@ test("remote 缺 endpoint 报错", async () => {
   await assert.rejects(() => m.open({ transport: "remote" }), /endpoint/);
 });
 
-test("remote 当前明确报未实现（接缝已就位）", async () => {
+test("remote 未注册 scheme 报错（接缝可扩展）", async () => {
   const m = new ConnectionManager(null, { linkFactory: createLink });
   await assert.rejects(
-    () => m.open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000" }),
+    () => m.open({ transport: "remote", endpoint: "kcp://127.0.0.1:1" }),
     /尚未实现/,
   );
-});
-
-test("remote 注入假链路时，status 保留 transport/endpoint", async () => {
-  const m = new ConnectionManager(null, { linkFactory: () => fakePort() });
-  const st = await m.open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000" });
-  assert.equal(st.transport, "remote");
-  assert.equal(st.endpoint, "tcp://esp32s3-01:7000");
-  assert.equal(st.port, "tcp://esp32s3-01:7000");
-  await m.close(st.connection_id);
 });

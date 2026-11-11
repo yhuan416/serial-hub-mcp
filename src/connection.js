@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createLink, DEFAULT_BAUD, FLOW_MAP, TRANSPORTS } from "./links/index.js";
+import { openRemoteConnection } from "./remote/connection.js";
 
 // 默认 RX 缓冲上限。可用 open 的 rx_buffer_size 扩大（如高速串口/长时间日志）。
 // 注意：此值只约束"未消费"的积压，不是生命周期内存上限；消费后（read/transact）即时释放。
@@ -736,6 +737,8 @@ class ConnectionManager {
       transport,
       endpoint,
       port: path,
+      port_id: args.port_id ?? null,
+      token: args.token ?? null,
       baud_rate,
       data_bits,
       stop_bits,
@@ -744,6 +747,13 @@ class ConnectionManager {
       rx_buffer_size,
       newline: args.newline ?? "none",
     };
+
+    // 远端：直接构建 RemoteConnection（内部完成 HELLO/LOG_STATS，按需 pull）。
+    if (transport === "remote") {
+      const conn = await openRemoteConnection(config);
+      this.connections.set(conn.id, conn);
+      return conn.status();
+    }
 
     const port = this.createPort(config);
     await new Promise((resolve, reject) => {

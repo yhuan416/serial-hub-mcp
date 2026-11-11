@@ -1,6 +1,7 @@
 # 远端串口链路协议 v0（定稿）
 
-> 状态：**v0 已定稿**，实现待做（先 `tcp` adapter + 假桥，再 ESP32 固件）。
+> 状态：**v0 已定稿**。host 侧 `tcp` 适配器与假桥（`test-utils/fake_bridge.js`）已实现并通过端到端测试；
+> ESP32 固件待做，`udp/kcp/mqtt/ws` 与压缩为 v1 备选。
 > 架构背景见 [hub-architecture.md](./hub-architecture.md)。
 
 本文是 host（serial-hub-mcp）与远端串口桥（ESP32-S3 等）之间的**唯一事实源**。
@@ -81,6 +82,9 @@ READY ── CONFIG/WRITE/READ/TRANSACT/SET_LINES/BREAK/LOG_* /PING
 
 - host 必须把三者当作**不透明单调整数**（JS 安全上限 2^53，足够）。
 - **`offset` 是字节游标，`log_seq` 是条目游标，二者不可互换。**
+- `rx_offset`/`tx_offset` 采用 **0-based 位置语义**：`rx_offset` 表示「已收到的字节数」，
+  下一个到达字节的位置就是该值；`READ.from_offset = N` 返回位置 `>= N` 的字节。
+  因此 `TRANSACT` 的 `offset_from = barrier_offset`（不是 `+1`）。
 
 ## 5. 能力协商
 
@@ -182,7 +186,8 @@ READY ── CONFIG/WRITE/READ/TRANSACT/SET_LINES/BREAK/LOG_* /PING
 
 结束条件优先级（与本地一致）：`match > max_bytes > idle > budget`。
 
-- `stopped_reason`: `match | max_bytes | idle | budget | closed | error`
+- `stopped_reason`: `match | max_bytes | min_bytes | idle | budget | closed | error`
+  （`min_bytes` 表示满足最小字节数后立即返回，属于正常部分结果，不是超时）
 - `max_wait_ms` 超过 `caps.max_hold_ms` 时设备 **clamp** 并回 `hold_clamped:true`。
 - **`gap=true`**：`from_offset < ring_start_offset`，返回从 `ring_start_offset` 起的数据，
   host 应改用 `LOG_EXPORT` 从 SD 补齐。
@@ -194,14 +199,14 @@ READY ── CONFIG/WRITE/READ/TRANSACT/SET_LINES/BREAK/LOG_* /PING
 {"id":12,"op":"TRANSACT","port":"uart0","data_b64":"QVRJKzENCg==","op_id":"t-91c2",
  "match_b64":"T0s=","min_bytes":1,"max_wait_ms":2000,"idle_timeout_ms":200,"budget_ms":5000}
 → {"id":12,"ok":true,"result":{
-  "data_b64":"...","offset_from":1014,"offset_to":1020,"next_offset":1020,
+  "data_b64":"...","offset_from":1013,"offset_to":1020,"next_offset":1020,
   "barrier_offset":1013,
   "tx_offset":903,"tx_log_seq":45,
   "matched":true,"stopped_reason":"match","gap":false,"deduped":false
 }}
 ```
 
-**屏障语义**：`offset_from = barrier_offset + 1`，只返回「写之后到达」的字节。
+**屏障语义**：`offset_from = barrier_offset`（0-based），只返回「写之后到达」的字节。
 这是本地 `base = _length` 的远端等价物，避免 RTT 期间设备主动吐出的字节被误算为响应。
 host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精确。
 
@@ -324,6 +329,9 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
 
 - `caps.binary_frames=true`：`READ/LOG_EXPORT` 可返回原始二进制帧（省 base64）。
 - `tls://` scheme 与证书/指纹配置。
+- 数据压缩（**默认关闭，协商启用**）：`caps.compression = ["none","lz4","heatshrink"]`；
+  按块自适应（块 ≥ 1–4KB 且压缩后 < 原始 95% 才置 `COMPRESSED`），
+  `LOG_EXPORT` 优先，交互路径默认不压。文本日志通常可省 50–70%，随机/已压缩数据无收益。
 - 设备主动推流（当前明确非目标）。
 - 多 host 共享同一设备（仍以无会话 + 游标在请求里为前提）。
 
@@ -335,7 +343,7 @@ S: {"id":1,"ok":true,"result":{"proto":"v0","fw_version":"0.1.0","caps":{"max_ho
 C: {"id":2,"op":"CONFIG","port":"uart0","baud_rate":115200,"data_bits":8,"stop_bits":1,"parity":"none","flow_control":"none"}
 S: {"id":2,"ok":true,"result":{"port":"uart0","applied":{...}}}
 C: {"id":3,"op":"TRANSACT","port":"uart0","data_b64":"QVRJKzENCg==","op_id":"t-1","match_b64":"T0s=","budget_ms":5000}
-S: {"id":3,"ok":true,"result":{"data_b64":"T0sNCg==","offset_from":0,"offset_to":4,"next_offset":4,"barrier_offset":-1,"matched":true,...}}
+S: {"id":3,"ok":true,"result":{"data_b64":"T0sNCg==","offset_from":0,"offset_to":4,"next_offset":4,"barrier_offset":0,"matched":true,...}}
 C: {"id":4,"op":"READ","port":"uart0","from_offset":4,"budget_ms":10000,"idle_timeout_ms":300}
 S: {"id":4,"ok":true,"result":{"data_b64":"","offset_from":4,"offset_to":4,"next_offset":4,"stopped_reason":"idle","gap":false,...}}
 C: {"id":5,"op":"CLOSE","port":"uart0"}

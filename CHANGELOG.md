@@ -16,7 +16,12 @@ Initial open-source release.
   seq/time/direction/content/order.
 - Hub skeleton: per-`connection_id` serialization with cross-connection concurrency, log
   backend routing (`LogRouter`), and link abstraction (`src/links/`).
-- Public remote-link contract for ESP32-style bridges: `open({transport:"remote", endpoint})`
-  plus the READ/TRANSACT/LOG_* RPC specification. The adapter itself is not implemented yet.
-- Endpoint registry design for future `tcp`/`udp`/`kcp`/`mqtt` transports.
+- Public remote-link contract (v0) for ESP32-style bridges: `open({transport:"remote", endpoint})`
+  plus the HELLO/READ/TRANSACT/LOG_* RPC specification.
+- **Host-side TCP remote link implemented**: NDJSON RPC, HELLO token auth, on-demand pull
+  (`READ` long-poll), device-side `offset` cursors, `TRANSACT` barrier, control lines/BREAK,
+  and `receive`/`dump_to_file` mapped onto the RPC. ESP32 firmware is not included yet.
+- In-process v0 **fake bridge** (`test-utils/fake_bridge.js`) and end-to-end tests.
+- Endpoint scheme registry (`registerRemoteScheme`); `tcp` implemented, `udp/kcp/mqtt/ws` planned.
+- Data compression is reserved for v1 (negotiated, adaptive; see protocol doc).
 - Zero private dependencies: built directly on `@modelcontextprotocol/sdk`, `serialport`, `zod`.
