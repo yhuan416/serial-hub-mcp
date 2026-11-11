@@ -1,7 +1,7 @@
 # serial-hub-mcp 串口 Hub 架构
 
 > 状态：设计已定，MCP 侧骨架先行；远端链路待 ESP32 桥固件。
-> 配套契约见 [remote-link-protocol.md](./remote-link-protocol.md)。
+> 配套契约见 [remote-link-protocol.md](./remote-link-protocol.md)（**v0 已定稿**）。
 
 ## 1. 目标
 
@@ -216,6 +216,8 @@ registerLink("tcp", { create(cfg), probe?, capabilities? });
 - 后续可加 `endpoint_list` / `endpoint_probe`：发现（mDNS/UDP 广播）与连通性/能力探测。
 
 ### 9.5 落地顺序建议
+
+v0 帧格式已定稿为 **NDJSON + base64**（见链路契约），落地顺序：
 
 1. `serial`（已有）
 2. `tcp`（NDJSON，最小可用）
