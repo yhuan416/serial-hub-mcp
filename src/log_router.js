@@ -75,4 +75,14 @@ export class LogRouter {
     if (!b) throw new Error("日志功能未启用");
     return b.clear(connection_id);
   }
+
+  export(opts = {}) {
+    const id = opts.connection_id;
+    const b = id ? this.backendFor(id) : this.localStore;
+    if (!b) throw new Error("日志功能未启用");
+    if (typeof b.export !== "function") {
+      throw new Error("当前连接不支持 log_export（需要远端 SD 权威日志；本地请用 dump_to_file）");
+    }
+    return b.export(opts);
+  }
 }

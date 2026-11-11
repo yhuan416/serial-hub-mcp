@@ -121,7 +121,7 @@ UART TX ◄──── WRITE / TRANSACT（host 发起），镜像进 SD 日志�
 | 连接 | 权威日志 | host 侧 |
 |---|---|---|
 | 本地 | host `LogStore` | 即权威 |
-| 远端 | 设备 SD | `mirror`（live 镜像，可缺、非权威） |
+| 远端 | 设备 SD | `RemoteLogStore`（代理 LOG_STATS/LOG_QUERY/LOG_EXPORT；不镜像字节） |
 
 返回中带 `source:"device"|"mirror"`、`authoritative:boolean`；`total/evicted` 等只用权威值。
 
@@ -130,8 +130,8 @@ UART TX ◄──── WRITE / TRANSACT（host 发起），镜像进 SD 日志�
 **存原始字节 + 轻量索引，条目在 host 侧还原**（不在固件里重写切行逻辑，避免漂移）：
 
 ```
-raw-NNNNNN.bin   # 原样字节流
-idx-NNNNNN.bin   # {byte_offset, dev_seq, dev_tick, dir} 的定长/变长记录
+raw-rx/tx-<seg>.bin   # 原样字节流（按方向）
+idx-rx/tx-<seg>.bin   # {offset, seq, tick_ms, len, dir} 定长 20B 记录
 ```
 
 host 提取时复用与本地相同的切行器，生成 5.1 的条目 → **契约天然对齐**。
@@ -139,7 +139,7 @@ host 提取时复用与本地相同的切行器，生成 5.1 的条目 → **契
 
 ## 6. 工具面
 
-**不新增工具名**（阶段一），只在现有工具上加链路参数：
+阶段一不新增工具名，只在现有工具上加链路参数；后续已补 `log_export`：
 
 - `open` 增加 `transport: "serial" | "remote"`、`endpoint`（`transport=remote` 时必填）。
 - `get_status` 的 `config`/顶层带 `transport`、`endpoint`。
@@ -149,8 +149,8 @@ host 提取时复用与本地相同的切行器，生成 5.1 的条目 → **契
 | 工具 | 语义 | 现状 |
 |---|---|---|
 | `list_endpoints` | 发现/列出远端桥 | 未实现 |
-| `log_export` | 从设备权威日志按 `seq/时间` 段导出到 host 文件 | 未实现（不要复用 `dump_to_file`） |
-| `log_query` 扩展 | 增加 `cursor/next_seq` 分页 | 未实现 |
+| `log_export` | 从设备权威日志按 `seq/方向` 分页导出到 host 文件 | 已实现（`RemoteLogStore.export`，远端 SD） |
+| `log_query` 扩展 | 增加 `cursor/next_seq` 分页 | 远端已支持（工具参数 `cursor`） |
 
 `dump_to_file` 保持「**实时**捕获写 host 盘」，与历史导出语义分开。
 

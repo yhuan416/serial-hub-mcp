@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createLink, DEFAULT_BAUD, FLOW_MAP, TRANSPORTS } from "./links/index.js";
 import { openRemoteConnection } from "./remote/connection.js";
+import { RemoteLogStore } from "./remote/log_store.js";
 
 // 默认 RX 缓冲上限。可用 open 的 rx_buffer_size 扩大（如高速串口/长时间日志）。
 // 注意：此值只约束"未消费"的积压，不是生命周期内存上限；消费后（read/transact）即时释放。
@@ -752,6 +753,9 @@ class ConnectionManager {
     if (transport === "remote") {
       const conn = await openRemoteConnection(config);
       this.connections.set(conn.id, conn);
+      if (this.logStore && typeof this.logStore.bind === "function") {
+        this.logStore.bind(conn.id, new RemoteLogStore(conn));
+      }
       return conn.status();
     }
 
@@ -784,13 +788,19 @@ class ConnectionManager {
   async close(id) {
     const conn = this.connections.get(id);
     if (!conn) throw new Error(`连接不存在: ${id}`);
+    if (this.logStore && typeof this.logStore.unbind === "function") {
+      this.logStore.unbind(id);
+    }
     await conn.close();
     this.connections.delete(id);
     return conn.status();
   }
 
   async closeAll() {
-    for (const [, conn] of this.connections) {
+    for (const [id, conn] of this.connections) {
+      if (this.logStore && typeof this.logStore.unbind === "function") {
+        this.logStore.unbind(id);
+      }
       try {
         await conn.close();
       } catch (_) {}

@@ -25,8 +25,11 @@ line for retrieval, but the raw hex is always the source of truth.
 - **Remote link (TCP)**: `open({transport:"remote", endpoint:"tcp://host:port"})` speaks the
   v0 NDJSON RPC contract (`HELLO/READ/TRANSACT/LOG_*`) to an ESP32-style bridge. On-demand
   pull, device-side offsets, and a `transact` barrier that excludes pre-write bytes.
-  The ESP32 firmware is not included yet; `test-utils/fake_bridge.js` implements the protocol
-  for end-to-end tests. Other schemes (`ws/udp/kcp/mqtt`) plug in via the scheme registry.
+  Remote `log_query/log_stats/log_clear` proxy the device via `RemoteLogStore`, and
+  `log_export` pulls the device SD history into a host file (separate from live
+  `dump_to_file`). `test-utils/fake_bridge.js` still covers the wire contract; the ESP32
+  firmware lives in `serial-hub-bridge`. Other schemes (`ws/udp/kcp/mqtt`) plug in via the
+  scheme registry.
 
 > Status: `0.1.x` — local serial is production-ready; the host-side TCP remote link is
 > implemented and tested against a fake bridge; ESP32 firmware and extra transports are next.
@@ -101,11 +104,12 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `read` | Read bytes since the cursor (optional wait / match / min bytes) |
 | `transact` | Write then wait for a response in one step (AT/Modbus friendly) |
 | `receive` | Capture a window until match / max bytes / idle / budget |
-| `dump_to_file` | Stream RX to a file (no large payloads through MCP) |
+| `dump_to_file` | Stream RX to a file (live capture; no large payloads through MCP) |
 | `set_dtr_rts` | Set DTR/RTS, optionally pulse (reset/bootloader) |
 | `send_break` | Send a BREAK for a given duration |
 | `profile_list/save/delete` | Reusable named connection profiles |
 | `log_query/stats/clear` | Search, inspect and clear per-connection logs |
+| `log_export` | Export a remote device's authoritative SD log to a host file (seq/dir paged) |
 | `service_info` | Service name, version, changelog |
 
 ## Quick start
