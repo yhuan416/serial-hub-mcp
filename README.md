@@ -157,9 +157,13 @@ includes it in the provisioning QR when provisioning is active.
   `bytes` is the full length. `log_export` writes the raw bytes.
 - `log_stats.segments[]` lists every segment with `first_seq/latest_seq/active`; `log_export`
   accepts `segment` to export a specific segment (default: active).
-- `log_sync` is the long-running collector: it exports all new seq per segment/dir into
+- `log_sync` is the collector: it exports all new seq per segment/dir into
   `~/.cache/serial-hub-mcp/remote-sync/<endpoint>/`, keeps `state.json` watermarks, and is
-  safe to call repeatedly. Call it periodically if you need host-side complete history.
+  safe to call repeatedly. Remote stores auto-run it every `SERIAL_HUB_MCP_AUTO_SYNC_MS`
+  (default 60 s; `0` disables); manual calls are serialized behind auto ones.
+- After a segment/dir is fully exported, `log_sync` sends `LOG_ACK`; the device only
+  retention-deletes acknowledged segments. If the card gets critically full, it force-deletes
+  the oldest unarchived segment with `sd.retention_unacked`.
 - `log_stats` exposes loss/health counters: `rx_bytes`, `tx_bytes`, `uart_overflow_*`,
   `ring.dropped_bytes`, `sd_write_errors`, `sd_queue.dropped*`, and `sd_broken`. A healthy
   powered link should keep `uart_overflow_bytes=0`, `sd_queue.dropped=0`, and
@@ -182,6 +186,8 @@ All paths use XDG defaults and can be overridden:
 | `SERIAL_HUB_MCP_LOG_PART_BYTES` | `8388608` (8 MiB) | Partition roll size |
 | `SERIAL_HUB_MCP_PROFILES_DIR` | `$XDG_CONFIG_HOME/serial-hub-mcp` | Profiles |
 | `SERIAL_HUB_MCP_DUMPS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/dumps` | `dump_to_file` output |
+| `SERIAL_HUB_MCP_SYNC_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/remote-sync` | `log_sync` archive root |
+| `SERIAL_HUB_MCP_AUTO_SYNC_MS` | `60000` | remote auto `log_sync` interval; `0` disables |
 | `SERIAL_HUB_MCP_HTTP` | unset | `1` enables HTTP mode (same as `--http`) |
 | `SERIAL_HUB_MCP_HTTP_HOST` | `127.0.0.1` | HTTP bind host |
 | `SERIAL_HUB_MCP_HTTP_PORT` | `8787` | HTTP bind port |

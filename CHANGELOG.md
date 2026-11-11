@@ -12,7 +12,11 @@ All notable changes to this project are documented here.
 - `LOG_STATS` adds health counters (`rx_bytes`, `tx_bytes`, `uart_overflow_*`, `sd_queue`);
   `read/receive/dump/transact` surface `gap`/`gap_bytes`/ring bounds.
 - New `log_sync` collector: incremental segment/dir export to host with persisted watermarks
-  and resumable export pages.
+  and resumable export pages. Remote stores auto-run it every 60 s by default.
+- Device `LOG_ACK` + per-segment ack files: retention deletes only fully archived segments;
+  forced unarchived deletion only below 256 MiB free (`sd.retention_unacked`).
+- Active segment repair on resume: truncate invalid index tails and index orphan raw bytes
+  (`sd.repair`) after crashes/power loss.
 
 - Remote `log_query` fixes: `order:"desc"` now starts from the newest RAM window and returns
   a usable older-page cursor; `ram_earliest_seq` and `sd_earliest_seq` are reported

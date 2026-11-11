@@ -45,7 +45,13 @@ function mockStore(entries, opts = {}) {
           ram_latest_seq: entries.at(-1)?.seq ?? null,
           sd_earliest_seq: opts.sdEarliest ?? entries[0]?.seq ?? null,
           sd_latest_seq: entries.at(-1)?.seq ?? null,
-          segments: opts.segments || [],
+          segments: (opts.segments || []).map((s) => ({
+            latest_rx: s.latest_rx ?? s.latest_seq ?? 0,
+            latest_tx: s.latest_tx ?? 0,
+            acked_rx: s.acked_rx ?? 0,
+            acked_tx: s.acked_tx ?? 0,
+            ...s,
+          })),
         };
       }
       if (op === "LOG_QUERY") {
@@ -71,6 +77,7 @@ function mockStore(entries, opts = {}) {
         };
       }
       if (op === "LOG_CLEAR") return { cleared: true };
+      if (op === "LOG_ACK") return { acked: true, ...params };
       if (op === "LOG_EXPORT") {
         const chunk = Buffer.from("a\nb\nc\n");
         const index = Buffer.concat([idxRecord(0, 1, 2), idxRecord(2, 2, 2), idxRecord(4, 3, 2)]);
@@ -155,6 +162,7 @@ test("RemoteLogStore: log_sync 增量归档与水位", async () => {
   assert.equal(r1.bytes, 6);
   assert.equal(fs.existsSync(path.join(out, "seg-a-rx.log")), true);
   assert.equal(fs.readFileSync(path.join(out, "seg-a-rx.log"), "utf8"), "a\nb\nc\n");
+  assert.equal(r1.segments[0].ack.acked, true);
   const state = JSON.parse(fs.readFileSync(path.join(out, "state.json"), "utf8"));
   assert.equal(state["seg-a"].rx, 3);
   const r2 = await store.sync({ dir: "rx", out_dir: out, segment: "seg-a" });

@@ -268,7 +268,8 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
   "sd_earliest_seq":100,"sd_latest_seq":4567,"global_latest_seq":4567,
   "segment":"00000000-82de",
   "segments":[{"id":"00000000-82de","raw_bytes":1048576,"index_count":4467,
-               "first_seq":100,"latest_seq":4567,"active":true}],
+               "first_seq":100,"latest_seq":4567,"latest_rx":4567,"latest_tx":0,
+               "acked_rx":4567,"acked_tx":0,"acked":true,"active":true}],
   "rx_bytes":1048576,"tx_bytes":0,"uart_overflow_events":0,"uart_overflow_bytes":0,
   "sd_queue":{"bytes":3145728,"used":0,"dropped":0,"dropped_bytes":0},
   "ring":{"bytes":4194304,"used":1024,"start_offset":980,"end_offset":1013,"dropped_bytes":0},
@@ -288,6 +289,18 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
                                 "active_cleared":false,"segment":"00000000-82de"}}
 ```
 - 省略 `segment`（或 `"all"`/`"*"`）清空所有 segment，并把 seq 归零；指定 segment 只清该段。
+
+### LOG_ACK（host 归档水位）
+
+```json
+{"id":34,"op":"LOG_ACK","port":"uart0","segment":"00000000-82de","dir":"rx","seq":4567}
+→ {"id":34,"ok":true,"result":{"acked":true,"segment":"00000000-82de","dir":"rx","seq":4567}}
+```
+
+- `log_sync` 每完成一个 segment/dir 的完整导出后发送；设备持久化 `acked_rx/tx`。
+- retention 优先只删除 `acked_rx >= latest_rx && acked_tx >= latest_tx` 的完整段；
+  仅当卡剩余空间低于 `BRIDGE_SD_UNACKED_FREE_MB` 时强制删除最旧未归档段并记
+  `sd.retention_unacked`。
 
 ### LOG_EXPORT（按段导出原始字节 + 索引，host 侧还原条目）
 

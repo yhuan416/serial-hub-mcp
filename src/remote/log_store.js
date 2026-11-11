@@ -70,6 +70,22 @@ export class RemoteLogStore {
     this.rpc = conn.rpc;
     this.id = conn.id;
     this.config = conn.config || {};
+    this._closed = false;
+    this._syncChain = Promise.resolve();
+    this._autoPending = false;
+    const interval = Number(process.env.SERIAL_HUB_MCP_AUTO_SYNC_MS ?? 60000);
+    if (Number.isFinite(interval) && interval > 0) {
+      this._autoTimer = setInterval(() => {
+        if (this._closed || this._autoPending) return;
+        this._autoPending = true;
+        this.sync({ auto: true })
+          .catch((err) => console.error(`[serial-hub] auto log_sync: ${err.message}`))
+          .finally(() => {
+            this._autoPending = false;
+          });
+      }, interval);
+      this._autoTimer.unref?.();
+    }
   }
 
   _portParams(extra = {}) {
@@ -81,7 +97,13 @@ export class RemoteLogStore {
   // ── Connection 侧接口：远端不落 host 日志 ─────────────────
   addData() {}
   addTx() {}
-  unregister() {}
+  unregister() {
+    this._closed = true;
+    if (this._autoTimer) {
+      clearInterval(this._autoTimer);
+      this._autoTimer = null;
+    }
+  }
   currentPartial() {
     return null;
   }
@@ -461,12 +483,34 @@ export class RemoteLogStore {
     };
   }
 
+  async ack(segment, dir, seq) {
+    const res = await this.rpc.request("LOG_ACK", this._portParams({ segment, dir, seq }), 10000);
+    return { ...res, segment, dir, seq };
+  }
+
+  async _ackDir(segment, dir, seq) {
+    if (!(seq > 0)) return { acked: false };
+    try {
+      await this.ack(segment, dir, seq);
+      return { acked: true, seq };
+    } catch (err) {
+      return { acked: false, seq, error: err.message };
+    }
+  }
+
   /**
    * Incremental host archive: export every segment/dir up to the snapshot's
    * latest_seq, appending to per-segment files and persisting a per-dir
    * watermark in <out_dir>/state.json. Subsequent calls only fetch new seq.
    */
-  async sync(opts = {}) {
+  sync(opts = {}) {
+    const run = () => this._syncImpl(opts);
+    const p = this._syncChain.then(run, run);
+    this._syncChain = p.catch(() => {});
+    return p;
+  }
+
+  async _syncImpl(opts = {}) {
     const stats = await this.stats();
     const segments = Array.isArray(stats.segments) ? stats.segments : [];
     if (segments.length === 0) {
@@ -495,11 +539,17 @@ export class RemoteLogStore {
     for (const seg of segments) {
       if (wanted && seg.id !== wanted) continue;
       const segState = state[seg.id] || { rx: 0, tx: 0 };
-      const latest = Number(seg.latest_seq) || 0;
       for (const dir of dirs) {
+        const latest =
+          dir === "rx"
+            ? Number(seg.latest_rx ?? seg.latest_seq) || 0
+            : Number(seg.latest_tx ?? seg.latest_seq) || 0;
         const wm = Number(segState[dir]) || 0;
         if (!latest || latest <= wm) {
-          results.push({ segment: seg.id, dir, skipped: true, watermark: wm, latest });
+          let ack = null;
+          const already = Number(dir === "rx" ? seg.acked_rx : seg.acked_tx) >= wm;
+          if (wm > 0 && !already) ack = await this._ackDir(seg.id, dir, wm);
+          results.push({ segment: seg.id, dir, skipped: true, watermark: wm, latest, ack });
           continue;
         }
         const file = path.join(outDir, `${safeName(seg.id)}-${dir}.log`);
@@ -532,10 +582,12 @@ export class RemoteLogStore {
             append = true;
             if (from > latest) break;
           }
+          let ack = null;
           if (last > wm) {
             segState[dir] = last;
             state[seg.id] = segState;
             writeState(stateFile, state);
+            if (eof) ack = await this._ackDir(seg.id, dir, last);
           }
           bytes += segBytes;
           lines += segLines;
@@ -551,6 +603,7 @@ export class RemoteLogStore {
             lines: segLines,
             pages: segPages,
             eof,
+            ack,
           });
         } catch (err) {
           errors.push({ segment: seg.id, dir, error: err.message });
