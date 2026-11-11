@@ -67,6 +67,32 @@ export const logTools = (logStore) => {
     }),
 
     defineTool({
+      name: "log_sync",
+      title: "增量归档远端日志",
+      description:
+        "把远端 SD 日志增量导出到 host 目录，按 segment/方向维护 state.json 水位，只导出自上次水位之后的新 seq。" +
+        "默认导出所有 segment 的 rx+tx；这是长期采集用的 collector，不是实时 dump_to_file。" +
+        "可重复调用；同一 segment/dir 会追加到 <out_dir>/<segment>-<dir>.log。",
+      inputSchema: z.object({
+        connection_id: connId.describe("远端连接 ID（open 返回）"),
+        dir: z.enum(["rx", "tx"]).optional().describe("方向；省略则 rx+tx"),
+        segment: z.string().optional().describe("只同步指定 segment；省略全部"),
+        out_dir: z
+          .string()
+          .optional()
+          .describe("归档目录；缺省 ~/.cache/serial-hub-mcp/remote-sync/<endpoint>"),
+        max_pages: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("每轮 LOG_EXPORT 页数上限（默认 10000）"),
+        max_bytes: z.number().int().positive().optional().describe("每页字节上限（默认 32768）"),
+      }),
+      handler: async (args) => ({ ok: true, response: await requireStore().sync(args) }),
+    }),
+
+    defineTool({
       name: "event_query",
       title: "查询设备控制面事件",
       description:

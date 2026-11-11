@@ -1,7 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { RemoteLogStore } from "../src/remote/log_store.js";
+
+function idxRecord(off, seq, len) {
+  const b = Buffer.alloc(20);
+  b.writeBigUInt64LE(BigInt(off), 0);
+  b.writeUInt32LE(seq, 8);
+  b.writeUInt32LE(0, 12);
+  b.writeUInt16LE(len, 16);
+  b.writeUInt8(0, 18);
+  return b;
+}
 
 function makeEntries(n, needleAt = -1) {
   return Array.from({ length: n }, (_, i) => {
@@ -31,6 +45,7 @@ function mockStore(entries, opts = {}) {
           ram_latest_seq: entries.at(-1)?.seq ?? null,
           sd_earliest_seq: opts.sdEarliest ?? entries[0]?.seq ?? null,
           sd_latest_seq: entries.at(-1)?.seq ?? null,
+          segments: opts.segments || [],
         };
       }
       if (op === "LOG_QUERY") {
@@ -57,7 +72,16 @@ function mockStore(entries, opts = {}) {
       }
       if (op === "LOG_CLEAR") return { cleared: true };
       if (op === "LOG_EXPORT") {
-        return { chunk_b64: "", index_b64: "", bytes: 0, eof: true, next_cursor: null };
+        const chunk = Buffer.from("a\nb\nc\n");
+        const index = Buffer.concat([idxRecord(0, 1, 2), idxRecord(2, 2, 2), idxRecord(4, 3, 2)]);
+        return {
+          chunk_b64: chunk.toString("base64"),
+          index_b64: index.toString("base64"),
+          bytes: chunk.length,
+          eof: true,
+          next_cursor: null,
+          segment: params.segment,
+        };
       }
       throw new Error(`unexpected op ${op}`);
     },
@@ -119,4 +143,21 @@ test("RemoteLogStore: clear/export 传递 segment", async () => {
   assert.equal(calls.at(-1).params.segment, "seg-a");
   await store.export({ segment: "seg-b" });
   assert.equal(calls.at(-1).params.segment, "seg-b");
+});
+
+test("RemoteLogStore: log_sync 增量归档与水位", async () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "shb-sync-"));
+  const segments = [{ id: "seg-a", latest_seq: 3, first_seq: 1, active: true }];
+  const { store } = mockStore(makeEntries(3), { segments });
+  const r1 = await store.sync({ dir: "rx", out_dir: out, segment: "seg-a" });
+  assert.equal(r1.errors.length, 0);
+  assert.equal(r1.lines, 3);
+  assert.equal(r1.bytes, 6);
+  assert.equal(fs.existsSync(path.join(out, "seg-a-rx.log")), true);
+  assert.equal(fs.readFileSync(path.join(out, "seg-a-rx.log"), "utf8"), "a\nb\nc\n");
+  const state = JSON.parse(fs.readFileSync(path.join(out, "state.json"), "utf8"));
+  assert.equal(state["seg-a"].rx, 3);
+  const r2 = await store.sync({ dir: "rx", out_dir: out, segment: "seg-a" });
+  assert.equal(r2.bytes, 0);
+  assert.equal(r2.segments[0].skipped, true);
 });

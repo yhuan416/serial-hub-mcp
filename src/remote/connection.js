@@ -126,10 +126,12 @@ export class RemoteConnection {
   _applyRead(res) {
     const data = res && res.data_b64 ? Buffer.from(res.data_b64, "base64") : Buffer.alloc(0);
     const prev = this.rxCursor;
+    let gapBytes = 0;
     if (res && res.gap) {
       this.gaps += 1;
       const start = Number.isFinite(res.offset_from) ? res.offset_from : prev;
-      if (start > prev) this.dropped += start - prev;
+      if (start > prev) gapBytes = start - prev;
+      this.dropped += gapBytes;
     }
     if (res && typeof res.next_offset === "number") this.rxCursor = res.next_offset;
     else this.rxCursor = prev + data.length;
@@ -144,8 +146,13 @@ export class RemoteConnection {
       stopped_reason: res && res.stopped_reason,
       timed_out: Boolean(res && ["idle", "budget", "closed"].includes(res.stopped_reason)),
       gap: Boolean(res && res.gap),
+      gap_bytes: gapBytes,
       ring_start_offset: res && res.ring_start_offset,
       ring_end_offset: res && res.ring_end_offset,
+      has_more:
+        res && Number.isFinite(res.ring_end_offset)
+          ? res.ring_end_offset > this.rxCursor
+          : undefined,
       error: null,
     };
   }
@@ -188,8 +195,15 @@ export class RemoteConnection {
       data: r.data,
       start_offset: r.start_offset,
       end_offset: r.end_offset,
+      next_offset: r.next_offset,
       matched: r.matched,
       timed_out: r.timed_out,
+      stopped_reason: r.stopped_reason,
+      gap: r.gap,
+      gap_bytes: r.gap_bytes,
+      ring_start_offset: r.ring_start_offset,
+      ring_end_offset: r.ring_end_offset,
+      has_more: r.has_more,
       error: null,
     };
   }
@@ -215,8 +229,15 @@ export class RemoteConnection {
       data: r.data,
       start_offset: r.start_offset,
       end_offset: r.end_offset,
+      next_offset: r.next_offset,
       matched: r.matched,
       timed_out: r.timed_out,
+      stopped_reason: r.stopped_reason,
+      gap: r.gap,
+      gap_bytes: r.gap_bytes,
+      ring_start_offset: r.ring_start_offset,
+      ring_end_offset: r.ring_end_offset,
+      has_more: r.has_more,
       error: null,
     };
   }
@@ -276,6 +297,10 @@ export class RemoteConnection {
     let stopReason = "budget";
     let startOffset = this.rxCursor;
     let endOffset = this.rxCursor;
+    let gap = false;
+    let gapBytes = 0;
+    let ringStart = null;
+    let ringEnd = null;
 
     for (;;) {
       const remain = deadline - Date.now();
@@ -291,6 +316,10 @@ export class RemoteConnection {
         budgetMs: remain,
         maxBytes: maxBytes ? Math.max(1, maxBytes - total) : undefined,
       });
+      if (r.gap) gap = true;
+      gapBytes += r.gap_bytes || 0;
+      if (r.ring_start_offset != null) ringStart = r.ring_start_offset;
+      if (r.ring_end_offset != null) ringEnd = r.ring_end_offset;
       if (r.data.length) {
         if (!chunks.length) startOffset = r.start_offset;
         chunks.push(r.data);
@@ -331,6 +360,10 @@ export class RemoteConnection {
       matched,
       timed_out: ["idle", "budget", "closed"].includes(stopReason),
       stopped_reason: stopReason,
+      gap,
+      gap_bytes: gapBytes,
+      ring_start_offset: ringStart,
+      ring_end_offset: ringEnd,
       total_time_ms: Date.now() - t0,
     };
     if (resetUsed) frame.reset = resetUsed;
@@ -352,6 +385,10 @@ export class RemoteConnection {
     let collected = 0;
     let stopReason = "budget";
     let matched = false;
+    let gap = false;
+    let gapBytes = 0;
+    let ringStart = null;
+    let ringEnd = null;
 
     try {
       for (;;) {
@@ -373,6 +410,10 @@ export class RemoteConnection {
           budgetMs: remain,
           maxBytes: want,
         });
+        if (r.gap) gap = true;
+        gapBytes += r.gap_bytes || 0;
+        if (r.ring_start_offset != null) ringStart = r.ring_start_offset;
+        if (r.ring_end_offset != null) ringEnd = r.ring_end_offset;
         if (r.data.length) {
           collected += r.data.length;
           await new Promise((resolve, reject) =>
@@ -412,6 +453,10 @@ export class RemoteConnection {
       matched,
       timed_out: ["idle", "budget", "closed"].includes(stopReason),
       stopped_reason: stopReason,
+      gap,
+      gap_bytes: gapBytes,
+      ring_start_offset: ringStart,
+      ring_end_offset: ringEnd,
       total_time_ms: Date.now() - t0,
       preview,
     };
@@ -465,6 +510,7 @@ export class RemoteConnection {
       config,
       bytes_in: this.bytesIn,
       bytes_out: this.bytesOut,
+      rx_offset: this.rxCursor,
       rx_buffered: 0,
       rx_dropped: this.dropped,
       gap_count: this.gaps,

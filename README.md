@@ -27,7 +27,8 @@ line for retrieval, but the raw hex is always the source of truth.
   pull, device-side offsets, and a `transact` barrier that excludes pre-write bytes.
   Remote `log_query/log_stats/log_clear` proxy the device via `RemoteLogStore`,
   `log_export` pulls the device SD history into a host file (separate from live
-  `dump_to_file`), and `event_query` surfaces device control-plane events. Queries without
+  `dump_to_file`), `log_sync` incrementally archives SD segments with host watermarks,
+  and `event_query` surfaces device control-plane events. Queries without
   `connection_id` aggregate local + all remote connections. `test-utils/fake_bridge.js`
   covers the wire contract; the ESP32 firmware lives in `serial-hub-bridge`.
   Other schemes (`ws/udp/kcp/mqtt`) plug in via the scheme registry.
@@ -115,7 +116,8 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `profile_list/save/delete` | Reusable named connection profiles |
 | `log_query/stats/clear` | Search, inspect and clear logs (no `connection_id` = local + remote) |
 | `log_export` | Export a remote device's authoritative SD log to a host file (segment/seq/dir paged) |
-| `event_query` | Query remote control-plane events (SD mount/remount/write errors, ring drops) |
+| `log_sync` | Incrementally archive all new SD seq to a host directory with persisted watermarks |
+| `event_query` | Query remote control-plane events (SD mount/remount/write errors, ring drops, UART/SD queue loss) |
 | `service_info` | Service name, version, changelog |
 
 ## Quick start
@@ -155,6 +157,16 @@ includes it in the provisioning QR when provisioning is active.
   `bytes` is the full length. `log_export` writes the raw bytes.
 - `log_stats.segments[]` lists every segment with `first_seq/latest_seq/active`; `log_export`
   accepts `segment` to export a specific segment (default: active).
+- `log_sync` is the long-running collector: it exports all new seq per segment/dir into
+  `~/.cache/serial-hub-mcp/remote-sync/<endpoint>/`, keeps `state.json` watermarks, and is
+  safe to call repeatedly. Call it periodically if you need host-side complete history.
+- `log_stats` exposes loss/health counters: `rx_bytes`, `tx_bytes`, `uart_overflow_*`,
+  `ring.dropped_bytes`, `sd_write_errors`, `sd_queue.dropped*`, and `sd_broken`. A healthy
+  powered link should keep `uart_overflow_bytes=0`, `sd_queue.dropped=0`, and
+  `ring.dropped_bytes=0`.
+- `read/receive/dump_to_file/transact` include `gap`, `gap_bytes`, `ring_start_offset`,
+  `ring_end_offset`, and (where applicable) `next_offset`; `gap=true` means the live ring
+  lost bytes and you should export SD history.
 - `log_clear` with no `connection_id` requires `confirm:true` and clears local + all remote
   current logs; remote `segment` limits the clear to one segment.
 
@@ -185,6 +197,8 @@ All paths use XDG defaults and can be overridden:
   `rx_dropped`.
 - Logs are line-oriented for retrieval (`\n`, trailing `\r` stripped); TX is recorded once
   per write. Non-UTF-8 content is still available as raw hex.
+- Remote capture is decoupled: the UART task only enqueues lines into a PSRAM queue; a
+  lower-priority writer task does SD raw+index I/O. Queue/overflow loss is counted/evented.
 - Each log entry is `{ seq, ts, conn, dir, offset, line, hex, bytes }`. `seq` is per log
   source; the hub never renumbers it. For remote SD history, seq is **per segment**;
   `log_stats.segments[]` gives each segment's range and `log_export` takes `segment`.

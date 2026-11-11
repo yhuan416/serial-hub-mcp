@@ -64,8 +64,17 @@ function frameResult(r) {
     bytes: r.data.length,
     text: r.data.toString("utf8"),
     hex: r.data.toString("hex"),
+    start_offset: r.start_offset,
+    end_offset: r.end_offset,
+    next_offset: r.next_offset,
     matched: r.matched,
     timed_out: r.timed_out,
+    stopped_reason: r.stopped_reason,
+    gap: r.gap,
+    gap_bytes: r.gap_bytes,
+    ring_start_offset: r.ring_start_offset,
+    ring_end_offset: r.ring_end_offset,
+    has_more: r.has_more,
     error: r.error || null,
   };
 }

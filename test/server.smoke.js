@@ -24,13 +24,14 @@ const TOOLS = [
   "profile_delete",
   "log_query",
   "log_export",
+  "log_sync",
   "event_query",
   "log_stats",
   "log_clear",
   "service_info",
 ];
 
-test("smoke: 握手 + 工具枚举（20 个）", async () => {
+test("smoke: 握手 + 工具枚举（21 个）", async () => {
   const client = new MCPClient(process.execPath, [SERVER], { stderr: "pipe" });
   try {
     const sdk = await client.start();
@@ -51,8 +52,8 @@ test("smoke: service_info 返回服务名/版本/工具数", async () => {
     const info = r.data.response;
     assert.equal(info.service, "serial-hub-mcp");
     assert.ok(typeof info.version === "string" && info.version.length > 0);
-    assert.equal(info.tools_count, 20);
-    assert.ok(typeof info.changelog === "string" && info.changelog.includes("0.1.0"));
+    assert.equal(info.tools_count, 21);
+    assert.ok(typeof info.changelog === "string" && info.changelog.includes("Unreleased"));
     assert.ok(info.changelog_path.endsWith("CHANGELOG.md"));
   } finally {
     await client.close();

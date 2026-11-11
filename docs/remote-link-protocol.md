@@ -269,6 +269,8 @@ host **不得**用 `WRITE` + `READ` 两次往返自己拼，否则屏障不精�
   "segment":"00000000-82de",
   "segments":[{"id":"00000000-82de","raw_bytes":1048576,"index_count":4467,
                "first_seq":100,"latest_seq":4567,"active":true}],
+  "rx_bytes":1048576,"tx_bytes":0,"uart_overflow_events":0,"uart_overflow_bytes":0,
+  "sd_queue":{"bytes":3145728,"used":0,"dropped":0,"dropped_bytes":0},
   "ring":{"bytes":4194304,"used":1024,"start_offset":980,"end_offset":1013,"dropped_bytes":0},
   "time":{"synced":false,"source":"tick"}
 }}

@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- No-loss pipeline groundwork: UART RX/TX no longer performs SD I/O; lines/TX writes are
+  queued in a 3 MiB PSRAM queue and written raw+index by a dedicated task. Queue drops and
+  UART overflow are counted and emitted as `sd.queue_drop`/`uart.overflow` events.
+- SD logs flush unterminated RX lines every sync interval; retention now deletes complete
+  segments (not individual raw/index files).
+- `LOG_STATS` adds health counters (`rx_bytes`, `tx_bytes`, `uart_overflow_*`, `sd_queue`);
+  `read/receive/dump/transact` surface `gap`/`gap_bytes`/ring bounds.
+- New `log_sync` collector: incremental segment/dir export to host with persisted watermarks
+  and resumable export pages.
+
 - Remote `log_query` fixes: `order:"desc"` now starts from the newest RAM window and returns
   a usable older-page cursor; `ram_earliest_seq` and `sd_earliest_seq` are reported
   separately; `contains`/`regex` page through the RAM window (bounded) instead of filtering

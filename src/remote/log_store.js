@@ -36,6 +36,31 @@ function defaultExportPath(connectionId) {
   );
 }
 
+function defaultSyncDir() {
+  const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+  return process.env.SERIAL_HUB_MCP_SYNC_DIR || path.join(base, "serial-hub-mcp", "remote-sync");
+}
+
+function safeName(value) {
+  return String(value)
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .slice(0, 120);
+}
+
+function readState(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")) || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeState(file, state) {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+  fs.renameSync(tmp, file);
+}
+
 export class RemoteLogStore {
   /**
    * @param {import("./connection.js").RemoteConnection} conn
@@ -351,6 +376,8 @@ export class RemoteLogStore {
         : defaultExportPath(this.id));
 
     const maxBytes = Math.min(Math.max(opts.max_bytes ?? 32768, 256), 65536);
+    const maxPages = Number.isFinite(opts.max_pages) ? Math.max(1, opts.max_pages) : 10000;
+    const append = Boolean(opts.append);
     const seqFrom = Number.isFinite(opts.seq_from) ? opts.seq_from : undefined;
     const seqTo = Number.isFinite(opts.seq_to) ? opts.seq_to : undefined;
     const segment = opts.segment ? String(opts.segment) : undefined;
@@ -359,7 +386,7 @@ export class RemoteLogStore {
       fs.mkdirSync(path.dirname(file), { recursive: true });
     } catch (_) {}
 
-    const out = fs.createWriteStream(file);
+    const out = fs.createWriteStream(file, { flags: append ? "a" : "w" });
     let cursor = "0";
     let pages = 0;
     let bytes = 0;
@@ -406,7 +433,7 @@ export class RemoteLogStore {
         const next = res.next_cursor != null ? String(res.next_cursor) : null;
         if (!next || next === cursor) break;
         cursor = next;
-        if (pages > 10000) break;
+        if (pages >= maxPages) break;
       }
     } finally {
       await new Promise((resolve) => out.end(resolve));
@@ -423,12 +450,125 @@ export class RemoteLogStore {
       bytes,
       lines,
       pages,
+      max_pages: maxPages,
+      append,
       eof,
       first_seq: firstSeq,
       last_seq: lastSeq,
       ...(opts.time_from != null || opts.time_to != null
         ? { time_filter: "ignored (device clock is uptime tick)" }
         : {}),
+    };
+  }
+
+  /**
+   * Incremental host archive: export every segment/dir up to the snapshot's
+   * latest_seq, appending to per-segment files and persisting a per-dir
+   * watermark in <out_dir>/state.json. Subsequent calls only fetch new seq.
+   */
+  async sync(opts = {}) {
+    const stats = await this.stats();
+    const segments = Array.isArray(stats.segments) ? stats.segments : [];
+    if (segments.length === 0) {
+      throw new Error("设备没有可同步的 SD segment（has_sd/log_export 不可用？）");
+    }
+    const dirs = opts.dir ? [opts.dir] : ["rx", "tx"];
+    for (const d of dirs) {
+      if (d !== "rx" && d !== "tx") throw new Error("dir must be rx|tx");
+    }
+    const endpoint = safeName(this.config.endpoint || this.id);
+    const outDir = opts.out_dir || path.join(defaultSyncDir(), endpoint);
+    fs.mkdirSync(outDir, { recursive: true });
+    const stateFile = path.join(outDir, "state.json");
+    const state = readState(stateFile);
+    const maxPages = Number.isFinite(opts.max_pages) ? Math.max(1, opts.max_pages) : 10000;
+    const wanted = opts.segment ? String(opts.segment) : null;
+    if (wanted && !segments.some((s) => s.id === wanted)) {
+      throw new Error(`segment 不存在: ${wanted}`);
+    }
+
+    let bytes = 0;
+    let lines = 0;
+    let pages = 0;
+    const results = [];
+    const errors = [];
+    for (const seg of segments) {
+      if (wanted && seg.id !== wanted) continue;
+      const segState = state[seg.id] || { rx: 0, tx: 0 };
+      const latest = Number(seg.latest_seq) || 0;
+      for (const dir of dirs) {
+        const wm = Number(segState[dir]) || 0;
+        if (!latest || latest <= wm) {
+          results.push({ segment: seg.id, dir, skipped: true, watermark: wm, latest });
+          continue;
+        }
+        const file = path.join(outDir, `${safeName(seg.id)}-${dir}.log`);
+        let from = wm + 1;
+        let append = wm > 0;
+        let last = wm;
+        let eof = false;
+        let segBytes = 0;
+        let segLines = 0;
+        let segPages = 0;
+        try {
+          for (let round = 0; round < 100; round += 1) {
+            const r = await this.export({
+              segment: seg.id,
+              dir,
+              seq_from: from,
+              seq_to: latest,
+              path: file,
+              append,
+              max_pages: maxPages,
+              ...(Number.isFinite(opts.max_bytes) ? { max_bytes: opts.max_bytes } : {}),
+            });
+            segBytes += r.bytes;
+            segLines += r.lines;
+            segPages += r.pages;
+            if (Number.isFinite(r.last_seq)) last = Math.max(last, r.last_seq);
+            eof = r.eof;
+            if (eof || r.last_seq == null || r.last_seq < from) break;
+            from = r.last_seq + 1;
+            append = true;
+            if (from > latest) break;
+          }
+          if (last > wm) {
+            segState[dir] = last;
+            state[seg.id] = segState;
+            writeState(stateFile, state);
+          }
+          bytes += segBytes;
+          lines += segLines;
+          pages += segPages;
+          results.push({
+            segment: seg.id,
+            dir,
+            file,
+            from: wm + 1,
+            to: last,
+            latest,
+            bytes: segBytes,
+            lines: segLines,
+            pages: segPages,
+            eof,
+          });
+        } catch (err) {
+          errors.push({ segment: seg.id, dir, error: err.message });
+        }
+      }
+    }
+    return {
+      connection_id: this.id,
+      transport: "remote",
+      source: "device",
+      authoritative: true,
+      out_dir: outDir,
+      state_file: stateFile,
+      segments: results,
+      bytes,
+      lines,
+      pages,
+      errors,
     };
   }
 }

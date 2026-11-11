@@ -222,4 +222,15 @@ export class LogRouter {
     }
     return b.events(opts);
   }
+
+  sync(opts = {}) {
+    const id = opts.connection_id;
+    if (!id) throw new Error("log_sync 需要 connection_id（仅远端连接）");
+    const b = this.backendFor(id);
+    if (!b) throw new Error("日志功能未启用");
+    if (typeof b.sync !== "function") {
+      throw new Error("当前连接不支持 log_sync（需要远端 SD 权威日志）");
+    }
+    return b.sync(opts);
+  }
 }
