@@ -46,6 +46,16 @@ function mockConn() {
         };
       }
       if (op === "LOG_CLEAR") return { cleared: true };
+      if (op === "EVENT_QUERY") {
+        return {
+          events: [{ seq: 7, ts: 100, level: "warn", code: "sd.write", msg: "fwrite failed" }],
+          count: 1,
+          earliest_seq: 7,
+          latest_seq: 7,
+          next_cursor: "7",
+          source: "device",
+        };
+      }
       if (op === "LOG_EXPORT") {
         const chunk = Buffer.from("hello\nworld\n");
         const index = Buffer.concat([idxRecord(0, 1, 10, 6, 0), idxRecord(6, 2, 20, 6, 0)]);
@@ -86,6 +96,17 @@ test("RemoteLogStore: query / stats / clear proxy to device", async () => {
   const cl = await store.clear();
   assert.equal(cl.cleared, true);
   assert.equal(calls[2].op, "LOG_CLEAR");
+});
+
+test("RemoteLogStore: event_query proxies control-plane events", async () => {
+  const { conn, calls } = mockConn();
+  const store = new RemoteLogStore(conn);
+  const ev = await store.events({ seq_from: 1, limit: 10, level: "warn" });
+  assert.equal(ev.source, "device");
+  assert.equal(ev.count, 1);
+  assert.equal(ev.events[0].code, "sd.write");
+  assert.equal(calls.at(-1).op, "EVENT_QUERY");
+  assert.equal(calls.at(-1).params.level, "warn");
 });
 
 test("RemoteLogStore: export writes reconstructed lines", async () => {

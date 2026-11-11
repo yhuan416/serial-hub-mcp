@@ -25,9 +25,9 @@ line for retrieval, but the raw hex is always the source of truth.
 - **Remote link (TCP)**: `open({transport:"remote", endpoint:"tcp://host:port"})` speaks the
   v0 NDJSON RPC contract (`HELLO/READ/TRANSACT/LOG_*`) to an ESP32-style bridge. On-demand
   pull, device-side offsets, and a `transact` barrier that excludes pre-write bytes.
-  Remote `log_query/log_stats/log_clear` proxy the device via `RemoteLogStore`, and
+  Remote `log_query/log_stats/log_clear` proxy the device via `RemoteLogStore`,
   `log_export` pulls the device SD history into a host file (separate from live
-  `dump_to_file`). `test-utils/fake_bridge.js` still covers the wire contract; the ESP32
+  `dump_to_file`), and `event_query` surfaces device control-plane events. `test-utils/fake_bridge.js` still covers the wire contract; the ESP32
   firmware lives in `serial-hub-bridge`. Other schemes (`ws/udp/kcp/mqtt`) plug in via the
   scheme registry.
 
@@ -110,6 +110,7 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `profile_list/save/delete` | Reusable named connection profiles |
 | `log_query/stats/clear` | Search, inspect and clear per-connection logs |
 | `log_export` | Export a remote device's authoritative SD log to a host file (seq/dir paged) |
+| `event_query` | Query remote control-plane events (SD mount/remount/write errors, ring drops) |
 | `service_info` | Service name, version, changelog |
 
 ## Quick start

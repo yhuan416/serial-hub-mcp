@@ -8,8 +8,8 @@ Initial open-source release.
 
 - **Two transports**: stdio (default) and stateless MCP Streamable HTTP (`--http`), with optional
   Bearer auth (`SERIAL_HUB_MCP_HTTP_TOKEN`) and unauthenticated `/health` + `/info`.
-- 19 MCP tools: connection lifecycle, byte I/O (`read`/`write`/`transact`/`receive`/`dump_to_file`),
-  control lines (`set_dtr_rts`/`send_break`), profiles, log retrieval and `log_export`.
+- 20 MCP tools: connection lifecycle, byte I/O (`read`/`write`/`transact`/`receive`/`dump_to_file`),
+  control lines (`set_dtr_rts`/`send_break`), profiles, log retrieval, `log_export` and `event_query`.
 - Byte-transparent data plane with absolute consume cursor, cross-chunk matching, bounded RX
   buffer and drop accounting.
 - Per-connection durable logs: in-memory ring, JSONL partitions, retention eviction, query by
@@ -27,6 +27,8 @@ Initial open-source release.
   distinct from live `dump_to_file`.
 - Device SD support: the companion `serial-hub-bridge` firmware writes `raw-rx/tx` +
   `idx-rx/tx` with fsync/retention and implements `LOG_EXPORT`.
+- **event_query**: remote control-plane events (SD mount/remount/write errors, ring
+  drops) via `EVENT_QUERY`; SD/ring faults no longer only exist as counters.
 - Endpoint scheme registry (`registerRemoteScheme`); `tcp` implemented, `udp/kcp/mqtt/ws` planned.
 - Data compression is reserved for v1 (negotiated, adaptive; see protocol doc).
 - Zero private dependencies: built directly on `@modelcontextprotocol/sdk`, `serialport`, `zod`.

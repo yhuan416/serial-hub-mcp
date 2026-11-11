@@ -85,4 +85,13 @@ export class LogRouter {
     }
     return b.export(opts);
   }
+
+  events(connection_id, opts = {}) {
+    const b = connection_id ? this.backendFor(connection_id) : this.localStore;
+    if (!b) throw new Error("日志功能未启用");
+    if (typeof b.events !== "function") {
+      throw new Error("当前连接不支持 event_query（需要远端设备的事件日志）");
+    }
+    return b.events(opts);
+  }
 }

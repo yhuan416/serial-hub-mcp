@@ -151,6 +151,7 @@ host 提取时复用与本地相同的切行器，生成 5.1 的条目 → **契
 | `list_endpoints` | 发现/列出远端桥 | 未实现 |
 | `log_export` | 从设备权威日志按 `seq/方向` 分页导出到 host 文件 | 已实现（`RemoteLogStore.export`，远端 SD） |
 | `log_query` 扩展 | 增加 `cursor/next_seq` 分页 | 远端已支持（工具参数 `cursor`） |
+| `event_query` | 设备控制面事件（SD/ring 故障） | 已实现（`EVENT_QUERY`） |
 
 `dump_to_file` 保持「**实时**捕获写 host 盘」，与历史导出语义分开。
 

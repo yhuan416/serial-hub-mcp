@@ -117,6 +117,25 @@ export class RemoteLogStore {
   }
 
   /**
+   * Control-plane events from the device (SD mount/remount/write errors,
+   * ring drops, ...). Independent of the UART data log.
+   */
+  async events(opts = {}) {
+    const params = this._portParams({
+      ...(Number.isFinite(opts.seq_from) ? { seq_from: opts.seq_from } : {}),
+      ...(opts.limit ? { limit: opts.limit } : {}),
+      ...(opts.level ? { level: opts.level } : {}),
+    });
+    const res = await this.rpc.request("EVENT_QUERY", params, 10000);
+    return {
+      connection_id: this.id,
+      transport: "remote",
+      source: "device",
+      ...res,
+    };
+  }
+
+  /**
    * Export the device SD log into a host file.
    * @param {{dir?:string, seq_from?:number, seq_to?:number, path?:string,
    *          out_dir?:string, max_bytes?:number, time_from?:number,

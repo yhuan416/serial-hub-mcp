@@ -62,6 +62,25 @@ export const logTools = (logStore) => {
     }),
 
     defineTool({
+      name: "event_query",
+      title: "查询设备控制面事件",
+      description:
+        "查询远端设备的控制面事件（与串口数据日志分离）：SD 挂载/格式化/重挂载、" +
+        "SD 写/fsync 失败、ring 丢字节等。设备侧事件是 RAM 环形队列（默认 64 条），" +
+        "同时会打印到串口控制台。仅远端连接支持。",
+      inputSchema: z.object({
+        connection_id: connId.describe("远端连接 ID（open 返回）"),
+        seq_from: z.number().int().optional().describe("起始事件 seq（含）"),
+        limit: z.number().int().positive().max(256).optional().describe("返回条数上限，默认 100"),
+        level: z.enum(["info", "warn", "error"]).optional().describe("级别过滤"),
+      }),
+      handler: async (args) => ({
+        ok: true,
+        response: await requireStore().events(args.connection_id, args),
+      }),
+    }),
+
+    defineTool({
       name: "log_stats",
       title: "串口日志统计",
       description:
