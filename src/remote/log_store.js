@@ -533,7 +533,8 @@ export class RemoteLogStore {
       if (d !== "rx" && d !== "tx") throw new Error("dir must be rx|tx");
     }
     const endpoint = safeName(this.config.endpoint || this.id);
-    const outDir = opts.out_dir || path.join(defaultSyncDir(), endpoint);
+    const scope = this.config.port_id ? `${endpoint}-${safeName(this.config.port_id)}` : endpoint;
+    const outDir = opts.out_dir || path.join(defaultSyncDir(), scope);
     fs.mkdirSync(outDir, { recursive: true });
     const stateFile = path.join(outDir, "state.json");
     const state = readState(stateFile);

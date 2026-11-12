@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- Dual UART: UART1 (17/18, `uart1`) and UART2 (4/5, `uart2`); per-port
+  ring/RAM/SD namespace, `port_id` routing and concurrent TCP sessions.
+- Shared SD writer queue with per-port generation; `LOG_*`/`read`/`write` select
+  a port per request. NTP time base is per port/segment.
+
 - NTP/SNTP wall-clock timestamps: `HELLO/LOG_STATS.time` reports `epoch_ms/synced/source`;
   remote log entries carry epoch `ts` with `ts_source:"ntp"`; NTP sync seals the pre-sync
   segment and starts a segment with a persisted `epoch_base_ms`; `LOG_EXPORT`/host export

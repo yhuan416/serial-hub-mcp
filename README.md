@@ -134,7 +134,8 @@ close({ connection_id: "..." })
 For remote hubs:
 
 ```text
-open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000", token: "<token>" })
+open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000", token: "<token>", port_id: "uart1" })
+open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000", token: "<token>", port_id: "uart2" })
 transact({ connection_id: "...", data: "AT", match: "OK" })
 receive({ connection_id: "...", budget_ms: 5000, idle_timeout_ms: 300 })
 ```
