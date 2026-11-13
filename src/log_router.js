@@ -1,7 +1,7 @@
 // LogRouter —— 按 connection_id 路由日志后端。
 //
 // 目的：hub 同时对接本地/远端串口时，本地连接仍落现有 LogStore，
-// 远端连接落设备权威后端（RemoteLogStore，待实现）。Connection 只认一个
+// 远端连接的日志在 host 本地缓存。Connection 只认一个
 // LogBackend 对象，因此这里实现对 Connection 的同一组方法，内部按 id 分派。
 //
 // LogBackend 接口（Connection 调用）：

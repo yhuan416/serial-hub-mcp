@@ -9,6 +9,8 @@ import os from "node:os";
 import { defineTool } from "../sdk/tool.js";
 import { toBuffer, appendNewline } from "../encoding.js";
 import * as profiles from "../profiles.js";
+import { probeRemote } from "../remote/v1_connection.js";
+import { loadRemotes, resolveRemote } from "../remotes.js";
 
 export const connId = z.string().min(1).describe("连接 ID（由 open 返回）");
 
@@ -58,12 +60,33 @@ function must(manager, id) {
   return conn;
 }
 
-function frameResult(r) {
-  return {
+function looksText(buf) {
+  if (!buf || buf.length === 0) return true;
+  const s = buf.toString("utf8");
+  if (s.includes("\uFFFD")) return false;
+  let ctrl = 0;
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if ((c < 32 && c !== 9 && c !== 10 && c !== 13) || c === 127) ctrl += 1;
+  }
+  return ctrl / Math.max(1, s.length) < 0.1;
+}
+
+/** include_hex=true 强制带 hex；缺省只在非文本数据时带，避免响应翻倍。 */
+function applyHexPolicy(response, includeHex) {
+  if (includeHex === true) return response;
+  if (response && typeof response.text === "string") {
+    const buf = Buffer.from(response.text, "utf8");
+    if (looksText(buf)) delete response.hex;
+  }
+  return response;
+}
+
+function frameResult(r, includeHex) {
+  const out = {
     connection_id: r.connection_id,
     bytes: r.data.length,
     text: r.data.toString("utf8"),
-    hex: r.data.toString("hex"),
     start_offset: r.start_offset,
     end_offset: r.end_offset,
     next_offset: r.next_offset,
@@ -77,6 +100,107 @@ function frameResult(r) {
     has_more: r.has_more,
     error: r.error || null,
   };
+  if (includeHex === true || !looksText(r.data)) out.hex = r.data.toString("hex");
+  return out;
+}
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} 超时 (${ms}ms)`)), Math.max(1, ms));
+    Promise.resolve(promise).then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+function normalizeRemotePort(p, remote) {
+  return {
+    id: p.id ?? null,
+    path: p.path ?? null,
+    kind: p.kind ?? "uart",
+    manufacturer: p.manufacturer ?? null,
+    serial_number: p.serial_number ?? p.serialNumber ?? null,
+    vendor_id: p.vendor_id ?? p.vendorId ?? null,
+    product_id: p.product_id ?? p.productId ?? null,
+    pins: p.pins ?? null,
+    open: p.open ?? null,
+    baud_rate: p.baud_rate ?? null,
+    last_error: p.last_error ?? null,
+    caps: p.caps ?? null,
+    source: "remote",
+    remote: remote.name,
+    endpoint: remote.endpoint,
+  };
+}
+
+async function queryRemotePorts(remote) {
+  const timeout = remote.timeout_ms ?? 15000;
+  const info = await withTimeout(
+    probeRemote({
+      endpoint: remote.endpoint,
+      token: remote.token,
+      timeoutMs: timeout,
+    }),
+    timeout + 3000,
+    `remote "${remote.name}" 连接`,
+  );
+  try {
+    const list = Array.isArray(info && info.ports) ? info.ports : [];
+    const generation = info?.ports_generation ?? null;
+    const ports = list.map((p) => normalizeRemotePort(p, remote));
+    return {
+      ok: true,
+      source: "remote",
+      name: remote.name,
+      endpoint: remote.endpoint,
+      count: ports.length,
+      ports,
+      protocol_rev: info?.protocol_rev ?? null,
+      ports_generation: generation,
+      caps: info?.caps ?? null,
+      time: info?.time ?? null,
+      remote: {
+        fw_version: info?.fw_version ?? null,
+        board: info?.board ?? null,
+      },
+    };
+  } catch (err) {
+    throw err;
+  }
+}
+
+async function listLocalPorts() {
+  let ports = [];
+  let warning;
+  try {
+    ports = await SerialPort.list();
+  } catch (err) {
+    // 受限环境（容器无 udevadm/sysfs）时返回空列表而不是报错
+    warning = `无法枚举串口（${(err && err.message) || err}）；返回空列表`;
+  }
+  return {
+    ports: ports.map((p) => ({
+      path: p.path,
+      manufacturer: p.manufacturer ?? null,
+      serialNumber: p.serialNumber ?? null,
+      serial_number: p.serialNumber ?? null,
+      pnpId: p.pnpId ?? null,
+      locationId: p.locationId ?? null,
+      vendorId: p.vendorId ?? null,
+      vendor_id: p.vendorId ?? null,
+      productId: p.productId ?? null,
+      product_id: p.productId ?? null,
+      source: "local",
+    })),
+    warning,
+  };
 }
 
 export const connTools = (manager) => [
@@ -84,30 +208,105 @@ export const connTools = (manager) => [
     name: "list_ports",
     title: "列出串口",
     description:
-      "枚举系统检测到的串口。返回每个端口的路径、厂商、序列号、USB VID/PID 等。" +
-      "打开前先调用此工具确认存在的端口。",
-    inputSchema: z.object({}),
-    handler: async () => {
-      let ports = [];
-      let warning;
-      try {
-        ports = await SerialPort.list();
-      } catch (err) {
-        // 受限环境（容器无 udevadm/sysfs）时返回空列表而不是报错
-        warning = `无法枚举串口（${(err && err.message) || err}）；返回空列表`;
+      "枚举串口。默认枚举本机，并自动汇总所有已配置 remote 的端口列表（见 ~/.config/serial-hub-mcp/remotes.json）。" +
+      "可指定 endpoint 单查某个远端，或 remote 只查某个已配置的远端；include_local/include_remote 可裁剪。" +
+      "返回扁平 ports（每条带 source/remote）与按来源分组的 sources；远端失败只体现在 sources[i].error，不影响其它来源。",
+    inputSchema: z.object({
+      endpoint: z
+        .string()
+        .optional()
+        .describe("只查某个远端地址（如 tcp://host:7000）；省略则汇总所有已配置 remote"),
+      token: z.string().optional().describe("配合 endpoint 使用的 HELLO token"),
+      remote: z.string().optional().describe("只查某个已配置的 remote（名字，见 remotes.json）"),
+      include_remote: z
+        .boolean()
+        .optional()
+        .describe("是否包含已配置的 remote，默认 true；false 则只列本机"),
+      include_local: z.boolean().optional().describe("是否包含本机端口，默认 true"),
+      timeout_ms: z.number().int().positive().optional().describe("单次远端查询超时，默认 15000"),
+    }),
+    handler: async (args) => {
+      const cfg = loadRemotes();
+      const timeout = args.timeout_ms ?? 15000;
+      let targets = [];
+      let explicit = false;
+      if (args.endpoint) {
+        explicit = true;
+        targets = [
+          { name: "custom", endpoint: args.endpoint, token: args.token, timeout_ms: timeout },
+        ];
+      } else if (args.remote) {
+        targets = [resolveRemote(args.remote)];
+      } else if (args.include_remote !== false) {
+        targets = cfg.remotes;
       }
-      const response = {
-        ports: ports.map((p) => ({
-          path: p.path,
-          manufacturer: p.manufacturer ?? null,
-          serialNumber: p.serialNumber ?? null,
-          pnpId: p.pnpId ?? null,
-          locationId: p.locationId ?? null,
-          vendorId: p.vendorId ?? null,
-          productId: p.productId ?? null,
-        })),
-      };
-      if (warning) response.warning = warning;
+
+      const localPromise = args.include_local === false ? Promise.resolve(null) : listLocalPorts();
+      const remoteResults = await Promise.all(
+        targets.map((t) =>
+          queryRemotePorts(t).catch((err) => ({
+            ok: false,
+            source: "remote",
+            name: t.name,
+            endpoint: t.endpoint,
+            error: (err && err.message) || String(err),
+          })),
+        ),
+      );
+      const local = await localPromise;
+
+      // 无远端、只列本机：保持旧形状
+      if (!explicit && targets.length === 0) {
+        const response = { source: "local", ports: local ? local.ports : [] };
+        if (local && local.warning) response.warning = local.warning;
+        return { ok: true, response };
+      }
+
+      const sources = [];
+      if (local) {
+        sources.push({
+          source: "local",
+          ok: !local.warning,
+          count: local.ports.length,
+          ...(local.warning ? { warning: local.warning } : {}),
+        });
+      }
+      sources.push(...remoteResults);
+
+      const ports = [
+        ...(local ? local.ports : []),
+        ...remoteResults.flatMap((r) => (r.ok ? r.ports : [])),
+      ];
+      const warnings = [
+        ...cfg.warnings,
+        ...remoteResults.filter((r) => !r.ok).map((r) => `remote "${r.name}": ${r.error}`),
+      ];
+
+      // 显式 endpoint 单查：额外保留旧的顶层字段，便于兼容
+      if (explicit) {
+        const r = remoteResults[0];
+        if (!r.ok) throw new Error(`远端不可用: ${r.error}`);
+        return {
+          ok: true,
+          response: {
+            source: "remote",
+            endpoint: r.endpoint,
+            protocol_rev: r.protocol_rev,
+            ports_generation: r.ports_generation,
+            ports: r.ports,
+            caps: r.caps,
+            time: r.time,
+            remote: r.remote,
+            sources,
+          },
+        };
+      }
+
+      const response = { ports, sources };
+      if (cfg.file) response.remotes_file = cfg.file;
+      if (cfg.fromEnv) response.remotes_source = "env";
+      if (local && local.warning) response.warning = local.warning;
+      if (warnings.length) response.warnings = warnings;
       return { ok: true, response };
     },
   }),
@@ -136,7 +335,33 @@ export const connTools = (manager) => [
         .string()
         .optional()
         .describe("远端鉴权 token（transport=remote 必填；桥启动日志/配网 QR 可见）"),
+      remote: z
+        .string()
+        .optional()
+        .describe("已配置的 remote 名（remotes.json）；自动填充 endpoint/token，可被显式参数覆盖"),
       port_id: z.string().optional().describe("远端设备端口 ID（多端口设备用；缺省由设备选择）"),
+      v1_window_bytes: z.number().int().positive().optional().describe("流控窗口，默认 256 KiB"),
+      v1_ack_interval_bytes: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("v1 ACK 间隔，默认 32 KiB"),
+      v1_lease_ms: z.number().int().positive().optional().describe("v1 会话租约，默认 30000"),
+      v1_resume: z
+        .boolean()
+        .optional()
+        .describe("v1 重连时从上次 acked offset 续传（默认 true；false 强制新 capture）"),
+      v1_reconnect: z
+        .boolean()
+        .optional()
+        .describe("v1 断线自动重连（默认 true；false 则连接断开即结束）"),
+      v1_reconnect_base_ms: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("v1 重连初始退避毫秒数，默认 500（指数退避，上限 30s）"),
       port: z.string().optional().describe("串口路径，如 /dev/ttyUSB0、/dev/ttyACM0、COM3"),
       profile: z
         .string()
@@ -180,7 +405,19 @@ export const connTools = (manager) => [
         delete merged.profile;
       }
 
-      // 2) 链路类型：remote 用 endpoint；serial 用 port/sn/vid/pid
+      // 2) 命名 remote：填充 endpoint/token（显式参数优先）
+      if (merged.remote) {
+        if (merged.transport === "serial") {
+          throw new Error("open: remote 仅用于 transport=remote，不能与 transport=serial 同时使用");
+        }
+        const r = resolveRemote(merged.remote);
+        if (!merged.endpoint) merged.endpoint = r.endpoint;
+        if (merged.token == null) merged.token = r.token;
+        merged.transport = "remote";
+        delete merged.remote;
+      }
+
+      // 3) 链路类型：remote 用 endpoint；serial 用 port/sn/vid/pid
       const transport = merged.transport ?? (merged.endpoint ? "remote" : "serial");
       if (transport === "remote") {
         if (!merged.endpoint) throw new Error("open: transport=remote 需要 endpoint");
@@ -268,6 +505,10 @@ export const connTools = (manager) => [
         .min(0)
         .optional()
         .describe("若无数据则等待的毫秒数，默认 0 立即返回"),
+      include_hex: z
+        .boolean()
+        .optional()
+        .describe("保留 hex（默认 false；仅非文本数据自动带，二进制排查时打开）"),
     }),
     handler: async (args) => {
       const conn = must(manager, args.connection_id);
@@ -277,7 +518,7 @@ export const connTools = (manager) => [
         minBytes: args.min_bytes ?? 1,
         waitMs: args.wait_ms ?? 0,
       });
-      return { ok: true, response: frameResult(r) };
+      return { ok: true, response: frameResult(r, args.include_hex) };
     },
   }),
 
@@ -300,6 +541,7 @@ export const connTools = (manager) => [
         .optional()
         .describe("match 的编码，默认 utf8"),
       timeout_ms: z.number().int().min(0).optional().describe("等待回包的最大毫秒数，默认 5000"),
+      include_hex: z.boolean().optional().describe("保留 hex（默认 false；仅非文本数据自动带）"),
     }),
     handler: async (args) => {
       const conn = must(manager, args.connection_id);
@@ -308,7 +550,7 @@ export const connTools = (manager) => [
       buf = appendNewline(buf, newline);
       const match = args.match ? toBuffer(args.match, args.match_encoding || "utf8") : undefined;
       const r = await conn.transact(buf, { match, minBytes: 1, waitMs: args.timeout_ms ?? 5000 });
-      const f = frameResult(r);
+      const f = frameResult(r, args.include_hex);
       f.newline = newline;
       return { ok: true, response: f };
     },
@@ -427,22 +669,21 @@ export const connTools = (manager) => [
         .optional()
         .describe("整次观察预算（毫秒），默认 10000"),
       max_bytes: z.number().int().positive().optional().describe("返回字节上限"),
+      include_hex: z.boolean().optional().describe("保留 hex（默认 false；仅非文本数据自动带）"),
     }),
     handler: async (args) => {
       const conn = must(manager, args.connection_id);
       const match = args.match ? toBuffer(args.match, args.match_encoding || "utf8") : undefined;
-      return {
-        ok: true,
-        response: await conn.receive({
-          start: args.start ?? "cursor",
-          reset: args.reset ?? "none",
-          resetPulseMs: args.reset_pulse_ms ?? 100,
-          match,
-          idleTimeoutMs: args.idle_timeout_ms ?? 300,
-          budgetMs: args.budget_ms ?? 10000,
-          maxBytes: args.max_bytes,
-        }),
-      };
+      const resp = await conn.receive({
+        start: args.start ?? "cursor",
+        reset: args.reset ?? "none",
+        resetPulseMs: args.reset_pulse_ms ?? 100,
+        match,
+        idleTimeoutMs: args.idle_timeout_ms ?? 300,
+        budgetMs: args.budget_ms ?? 10000,
+        maxBytes: args.max_bytes,
+      });
+      return { ok: true, response: applyHexPolicy(resp, args.include_hex) };
     },
   }),
 

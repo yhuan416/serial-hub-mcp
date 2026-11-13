@@ -1,9 +1,4 @@
-// 本地链路工厂 + 注册表。
-//
-// transport 是「链路类别」：serial（本机，走本注册表）/ remote（远端桥，
-// 由 src/remote/connection.js + links/remote.js 的 scheme 注册表处理）。
-//
-// 详见 docs/hub-architecture.md「端点模板注册」。
+// 本地链路工厂。远端连接不走这里，由 ConnectionManager 直接建二进制会话。
 
 import { createSerialLink, DEFAULT_BAUD, FLOW_MAP, TRANSPORTS } from "./serial.js";
 
@@ -32,7 +27,7 @@ export function listLinks() {
 export function createLink(cfg) {
   const transport = cfg.transport ?? "serial";
   if (transport === "remote") {
-    throw new Error("remote 链路由 src/links/remote.js 的 scheme 注册表创建");
+    throw new Error("remote 链路不由 createLink 创建");
   }
   const factory = registry.get(transport);
   if (!factory) {

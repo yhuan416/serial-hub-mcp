@@ -1,8 +1,8 @@
 # serial-hub-mcp
 
 A serial-port MCP server that is also a **hub**: one process can hold multiple local
-UARTs and (in upcoming releases) remote serial bridges such as an ESP32-S3 acting as a
-wireless UART dongle.
+UARTs plus remote serial endpoints — either an ESP32-S3 wireless dongle or an
+**x86/Linux `serial-hub-server`** that exposes all of its local serial ports.
 
 The byte plane is intentionally boring and transparent: bytes in, bytes out, no framing,
 no prompt/regex interpretation. Content judgement is left to the agent. Logs are split by
@@ -20,25 +20,24 @@ line for retrieval, but the raw hex is always the source of truth.
 - **Durable logs**: per-connection in-memory ring + JSONL partitions on disk, queryable by
   seq/time/direction/content, with retention and eviction reporting.
 - **Profiles**: save connection parameters and reuse them with `open({profile})`.
+- **Configured remotes**: register remotes once in `~/.config/serial-hub-mcp/remotes.json`
+  (or `SERIAL_HUB_MCP_REMOTES`); `list_ports` aggregates local + all remote port lists in
+  parallel, and `open({remote:"name"})` resolves endpoint/token for you.
 - **Hub-ready concurrency**: calls are serialized per `connection_id` and run concurrently
   across different connections.
 - **Remote link (TCP)**: `open({transport:"remote", endpoint:"tcp://host:port"})` speaks the
-  v0 NDJSON RPC contract (`HELLO/READ/TRANSACT/LOG_*`) to an ESP32-style bridge. On-demand
-  pull, device-side offsets, and a `transact` barrier that excludes pre-write bytes.
-  Remote `log_query/log_stats/log_clear` proxy the device via `RemoteLogStore`,
-  `log_export` pulls the device SD history into a host file (separate from live
-  `dump_to_file`), `log_sync` incrementally archives SD segments with host watermarks,
-  and `event_query` surfaces device control-plane events. Queries without
-  `connection_id` aggregate local + all remote connections. `test-utils/fake_bridge.js`
-  covers the wire contract; the ESP32 firmware lives in `serial-hub-bridge`.
-  Other schemes (`ws/udp/kcp/mqtt`) plug in via the scheme registry.
+  binary push protocol. The device only keeps unacked bytes; the host splits lines and
+  owns `log_query`. Firmware lives in `serial-hub-bridge`.
+- **x86 remote hub-server** (`serial-hub-server`): deploy on a Linux box to expose
+  `ttyUSB*/ttyACM*`. Node.js (`src/hub-server`) plus a Docker image
+  (`docker/serial-hub-server.Dockerfile`). See [x86 hub-server](docs/x86-hub-server.md).
 - **Remote auth**: the bridge requires a HELLO token once configured (NVS-generated per
-  device or `CONFIG_BRIDGE_AUTH_TOKEN`); pass it as `open({token})`. v0 is still plaintext,
-  so use a trusted LAN or a VPN/SSH tunnel.
+  device or `CONFIG_BRIDGE_AUTH_TOKEN`); pass it as `open({token})`. Plaintext, so use a
+  trusted LAN or a VPN/SSH tunnel.
 
-> Status: `0.1.x` — local serial and the TCP remote link are implemented; the ESP32-S3
-> firmware (`serial-hub-bridge`) supports SD segment resume, auth, events and 4 MiB ring.
-> Extra transports (`ws/udp/kcp/mqtt`) are next.
+> Status: `0.1.x` — local serial, the TCP remote link, and the x86 `serial-hub-server`
+> are implemented; the ESP32-S3 firmware (`serial-hub-bridge`) supports SD segment resume,
+> auth, events and 4 MiB ring. Extra transports (`ws/udp/kcp/mqtt`) are next.
 
 ## Install
 
@@ -102,7 +101,7 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 
 | Tool | Purpose |
 |---|---|
-| `list_ports` | Enumerate local serial ports (path, VID/PID, serial number) |
+| `list_ports` | Enumerate serial ports; with `endpoint`/`token` it queries a remote hub (HELLO + LIST_PORTS) |
 | `open` | Open a connection (`transport` / `port` / `profile` / `sn|vid|pid` / `endpoint`) |
 | `close` | Close a connection |
 | `get_status` | Connection state, counters, control-line levels |
@@ -123,7 +122,8 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 ## Quick start
 
 ```text
-list_ports()
+list_ports()                     // 本机 + 所有已配置 remote 的端口
+open({ remote: "lab-x86", port_id: "ttyACM0", baud_rate: 921600 })
 open({ port: "/dev/ttyUSB0", baud_rate: 115200, newline: "crlf" })
 transact({ connection_id: "...", data: "AT", match: "OK" })
 receive({ connection_id: "...", start: "flush", reset: "dtr", budget_ms: 15000 })
@@ -134,8 +134,10 @@ close({ connection_id: "..." })
 For remote hubs:
 
 ```text
+// ESP32-S3 bridge
 open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000", token: "<token>", port_id: "uart1" })
-open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000", token: "<token>", port_id: "uart2" })
+// x86 hub-server（port_id 为串口 basename，也接受 /dev/ttyACM0）
+open({ transport: "remote", endpoint: "tcp://192.168.1.50:7000", token: "<token>", port_id: "ttyACM0", baud_rate: 921600 })
 transact({ connection_id: "...", data: "AT", match: "OK" })
 receive({ connection_id: "...", budget_ms: 5000, idle_timeout_ms: 300 })
 ```
@@ -220,8 +222,13 @@ All paths use XDG defaults and can be overridden:
 
 - [Hub architecture](docs/hub-architecture.md) — layering, pull-only data flow, per-source
   sequencing, durable-log authority, concurrency, endpoint registry plan.
-- [Remote link protocol](docs/remote-link-protocol.md) — host ↔ ESP32 bridge RPC contract
-  (READ/TRANSACT/LOG_*), framing, sequence/offset semantics, error codes.
+- [x86 hub-server](docs/x86-hub-server.md) — deploy a multi-port remote serial service on
+  Linux (systemd unit included).
+- [Configured remotes](docs/remotes.md) — remotes.json / env, aggregated `list_ports`,
+  `open({remote})`.
+- [Remote link protocol](docs/remote-link-protocol-v1.md) — binary push, BATCH, ACK,
+  host-side cache. Server in `src/hub-server/v1.js`; host client in
+  `src/remote/v1_connection.js`.
 
 ## Development
 
@@ -233,8 +240,7 @@ npm run smoke     # MCP handshake + tool enumeration only
 npm run smoke:http
 ```
 
-The remote-link tests start an in-process v0 bridge (`test-utils/fake_bridge.js`) over TCP,
-so they need neither hardware nor network access.
+Remote-link tests start an in-process hub over TCP. They need neither hardware nor network access.
 
 ## License
 

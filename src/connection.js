@@ -2,8 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createLink, DEFAULT_BAUD, FLOW_MAP, TRANSPORTS } from "./links/index.js";
-import { openRemoteConnection } from "./remote/connection.js";
-import { RemoteLogStore } from "./remote/log_store.js";
+import { openV1Connection, V1LogStore } from "./remote/v1_connection.js";
 
 // 默认 RX 缓冲上限。可用 open 的 rx_buffer_size 扩大（如高速串口/长时间日志）。
 // 注意：此值只约束"未消费"的积压，不是生命周期内存上限；消费后（read/transact）即时释放。
@@ -747,14 +746,23 @@ class ConnectionManager {
       flow_control,
       rx_buffer_size,
       newline: args.newline ?? "none",
+      v1_window_bytes: args.v1_window_bytes,
+      v1_ack_interval_bytes: args.v1_ack_interval_bytes,
+      v1_lease_ms: args.v1_lease_ms,
+      v1_mode: args.v1_mode,
+      v1_resume: args.v1_resume,
+      v1_reconnect: args.v1_reconnect,
+      v1_reconnect_base_ms: args.v1_reconnect_base_ms,
     };
 
-    // 远端：直接构建 RemoteConnection（内部完成 HELLO/LOG_STATS，按需 pull）。
     if (transport === "remote") {
-      const conn = await openRemoteConnection(config);
+      const conn = await openV1Connection(config, {
+        leaseMs: config.v1_lease_ms,
+        ackInterval: config.v1_ack_interval_bytes,
+      });
       this.connections.set(conn.id, conn);
       if (this.logStore && typeof this.logStore.bind === "function") {
-        this.logStore.bind(conn.id, new RemoteLogStore(conn));
+        this.logStore.bind(conn.id, new V1LogStore(conn));
       }
       return conn.status();
     }

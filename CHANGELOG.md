@@ -4,6 +4,49 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.1.5
+
+- x86 hub 数据面改为 BATCH。ACK 后释放发送缓存；超出缓存先 GAP 再丢。
+- host 拒收不带 BATCH 的数据帧。`history_query` 返回 `unsupported`。
+
+## 0.1.4
+
+- HELLO 不再携带或校验协议版本字段。hub 拒收非 `SH` 首帧。
+- ESP32 固件同步去掉 HELLO 的 `proto`。
+
+## 0.1.3
+
+- **host v1 自动重连**：socket 断开后按指数退避（默认 500ms 起、上限 30s）自动重连，
+  重新 HELLO/CONFIG/SUBSCRIBE，并从 `capture_id + offset` resume；capture 过期则自动新建。
+- `status()` 增加 `reconnecting/reconnect_attempts/reconnects/last_reconnect_at`；
+  `open({v1_reconnect:false})` 可禁用，`v1_reconnect_base_ms` 可调初始退避。
+- 重连期间控制命令快速失败（code `reconnecting`），`read/receive` 继续等待缓存数据。
+
+## 0.1.2
+
+- **v1 HISTORY_QUERY**（服务端）：按 capture 分页查询历史条目（seq 游标、dir、
+  limit/truncated），用于 host 缓存缺口回源。
+- **host 历史回填**：`V1LogStore` 在本地缓存缺失（seq_from 早于缓存起点）时自动
+  调用远端 HISTORY_QUERY 合并到本地缓存，再执行本地检索/导出。
+- 连接继续支持 auto-resume 与 `v1-cache` 落盘；`HISTORY_EXPORT` 仍未实现
+  （HISTORY_QUERY 分页足够覆盖当前场景）。
+
+## 0.1.1
+
+- **v1 remote protocol (draft) + host push mode**: session capture (open→linger),
+  binary frames (`HELLO/CONTROL/DATA/ACK/EVENT/ERROR`), window/ACK flow control,
+  `new/resume/gap` subscribe, single writer. Server MVP in `src/hub-server/v1.js`.
+- **Host v1 connection** (`src/remote/v1_connection.js`): background DATA→`CaptureCache`,
+  local `read/receive/dump_to_file/log_query/stats/export` (no RPC in hot path),
+  `open({protocol:"v1"})`, ACK/lease timers, gap tracking, auto resume from
+  `last_acked`, and on-disk cache (`v1-cache/<endpoint>/<capture>/entries-*.jsonl`).
+- **Configured remotes**: `remotes.json` / env registry; `list_ports` aggregates local +
+  all configured remotes in parallel; `open({remote})` resolves endpoint/token.
+- **x86 hub Docker**: multi-stage image, compose for n100, Harbor publish
+  (`harborcn.fujikam.com:14743/ipcs/serial-hub-server`), `/run/udev` for device metadata.
+- MCP usability: `include_hex` auto-trim, remote `list_ports(endpoint/remote)`, log-question
+  timeouts reduced (remote LOG_STATS no longer on the filtered query path).
+
 - Dual UART: UART1 (17/18, `uart1`) and UART2 (4/5, `uart2`); per-port
   ring/RAM/SD namespace, `port_id` routing and concurrent TCP sessions.
 - Shared SD writer queue with per-port generation; `LOG_*`/`read`/`write` select

@@ -44,7 +44,7 @@ const logStore = new LogStore({
   partBytes: Number(process.env.SERIAL_HUB_MCP_LOG_PART_BYTES) || undefined,
 });
 
-// hub：本地连接沿用 LogStore；远端连接后续绑定设备权威后端（RemoteLogStore）。
+// hub：本地连接用 LogStore；远端连接用 host 侧缓存。
 const logRouter = new LogRouter(logStore);
 const manager = new ConnectionManager(logRouter);
 // 按连接串行：同连接排队，跨连接并发（hub 多设备必需）。

@@ -1,0 +1,35 @@
+services:
+  serial-hub-server:
+    build:
+      context: ..
+      dockerfile: docker/serial-hub-server.Dockerfile
+    image: harborcn.fujikam.com:14743/ipcs/serial-hub-server:0.1.5
+    container_name: serial-hub-server
+    restart: unless-stopped
+    ports:
+      - "7000:7000"
+    environment:
+      SERIAL_HUB_SERVER_LISTEN: 0.0.0.0:7000
+      SERIAL_HUB_SERVER_DATA_DIR: /data
+      SERIAL_HUB_SERVER_PORTS: /dev/ttyUSB,/dev/ttyACM,/dev/serial/
+      SERIAL_HUB_SERVER_RING_BYTES: 128MiB
+      SERIAL_HUB_SERVER_RETENTION_BYTES: 8GiB
+      # 建议用 env_file 提供 token（0600），避免写进 compose
+      # SERIAL_HUB_SERVER_TOKEN: replace-me
+    env_file:
+      - ./serial-hub-server.env
+    volumes:
+      - shub-data:/data
+      - /run/udev:/run/udev:ro
+    devices:
+      # 按现场实际串口增减；也可以 privileged: true 省事但权限过大
+      - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/ttyACM0:/dev/ttyACM0
+    # 让容器用户能访问串口（Debian 系 dialout=20）
+    group_add:
+      - "20"
+    # 如果宿主机串口动态插拔，改用 privileged: true 或挂载 /dev
+    # privileged: true
+
+volumes:
+  shub-data:

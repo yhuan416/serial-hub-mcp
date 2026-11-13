@@ -1,0 +1,33 @@
+# n100 (192.168.4.50) — 讯美 wifi/dsp 两路 USB 串口
+#
+#   cp docker/serial-hub-server.env.example docker/serial-hub-server.env
+#   # 编辑 token
+#   docker compose -f docker/docker-compose.n100.yml up -d
+services:
+  serial-hub-server:
+    image: harborcn.fujikam.com:14743/ipcs/serial-hub-server:0.1.5
+    container_name: serial-hub-server
+    restart: unless-stopped
+    ports:
+      - "7000:7000"
+    environment:
+      NODE_ENV: production
+      SERIAL_HUB_SERVER_LISTEN: 0.0.0.0:7000
+      SERIAL_HUB_SERVER_DATA_DIR: /data
+      SERIAL_HUB_SERVER_PORTS: /dev/ttyACM
+      SERIAL_HUB_SERVER_CAPTURE_LINGER_MS: "60000"
+      SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES: 256MiB
+      SERIAL_HUB_SERVER_WINDOW_BYTES: 512KiB
+      SERIAL_HUB_SERVER_MAX_WINDOW_BYTES: 2MiB
+      SERIAL_HUB_SERVER_LEASE_MS: "30000"
+    env_file:
+      - ./serial-hub-server.env
+    volumes:
+      - /home/yhuan/.local/share/serial-hub-server-docker:/data
+      # 让 serialport 读到宿主 udev 信息（厂商/序列号/VID/PID）
+      - /run/udev:/run/udev:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+      - /dev/ttyACM1:/dev/ttyACM1
+    group_add:
+      - "20"

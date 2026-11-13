@@ -30,8 +30,18 @@ export const logTools = (logStore) => {
         limit: z.number().int().positive().optional().describe("返回条数上限，默认 100"),
         cursor: z.string().optional().describe("分页游标（远端 LOG_QUERY 的 next_cursor）"),
         order: z.enum(["asc", "desc"]).optional().describe("排序，默认 asc（旧→新）"),
+        include_hex: z
+          .boolean()
+          .optional()
+          .describe("保留每条 hex（默认 false，显著减小响应；二进制协议排查时打开）"),
       }),
-      handler: async (args) => ({ ok: true, response: await requireStore().query(args) }),
+      handler: async (args) => {
+        const r = await requireStore().query(args);
+        if (!args.include_hex && Array.isArray(r.entries)) {
+          r.entries = r.entries.map(({ hex: _hex, ...rest }) => rest);
+        }
+        return { ok: true, response: r };
+      },
     }),
 
     defineTool({

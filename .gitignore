@@ -7,3 +7,6 @@ coverage/
 report.xml
 eslint-report.json
 gl-code-quality-report.json
+# native hub-server build artifacts
+native/serial-hub-server
+native/*.o

@@ -1,0 +1,30 @@
+[Unit]
+Description=serial-hub-server (remote serial ports over v0 protocol)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=serialhub
+Group=dialout
+Environment=SERIAL_HUB_SERVER_LISTEN=0.0.0.0:7000
+Environment=SERIAL_HUB_SERVER_DATA_DIR=/var/lib/serial-hub-server
+Environment=SERIAL_HUB_SERVER_PORTS=/dev/ttyUSB,/dev/ttyACM,/dev/serial/
+Environment=SERIAL_HUB_SERVER_RING_BYTES=128MiB
+Environment=SERIAL_HUB_SERVER_RETENTION_BYTES=8GiB
+# 强烈建议把 token 放进环境文件（0600），而不是命令行
+EnvironmentFile=-/etc/serial-hub-server.env
+ExecStart=/usr/bin/node /opt/serial-hub-mcp/src/hub-server/index.js
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+# 基础加固（按需调整）
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/serial-hub-server
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

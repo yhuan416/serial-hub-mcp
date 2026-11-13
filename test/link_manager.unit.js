@@ -46,6 +46,6 @@ test("remote 未注册 scheme 报错（接缝可扩展）", async () => {
   const m = new ConnectionManager(null, { linkFactory: createLink });
   await assert.rejects(
     () => m.open({ transport: "remote", endpoint: "kcp://127.0.0.1:1" }),
-    /尚未实现/,
+    /endpoint 非法/,
   );
 });

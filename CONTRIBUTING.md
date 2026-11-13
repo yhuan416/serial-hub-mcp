@@ -26,13 +26,10 @@ Node.js >= 18 is required. On Linux you do **not** need a serial device to run t
   prompt/regex interpretation there; content judgement belongs to the agent.
 - `Connection` must stay transport-agnostic. It only depends on the port duck type
   (`on('data'|'error'|'close')`, `open/close/write/drain/flush/set`, `path`).
-- New transports are added through the registries:
-  - local link: `registerLink(name, factory)` in `src/links/index.js`
-  - remote scheme: `registerRemoteScheme(scheme, connector)` in `src/links/remote.js`;
-    a connector establishes the link, performs `HELLO`, and returns `{ rpc, info }`.
-- `Connection` (local) and `RemoteConnection` (`src/remote/connection.js`) expose the same
-  method surface used by the tools. The v0 remote protocol is exercised end-to-end with the
-  in-process `test-utils/fake_bridge.js`; extend it when adding RPCs.
+- New local transports are added with `registerLink(name, factory)` in `src/links/index.js`.
+  Remote sessions are opened by `ConnectionManager` via `src/remote/v1_connection.js`.
+- Remote protocol tests use the in-process hub (`test/hub_server_v1.unit.js`,
+  `test/v1_host.unit.js`).
 - Keep tool schemas documented in `defineTool` (`name/title/description/inputSchema/handler`)
   and return `{ ok: true, response }`; throw for business errors.
 - Run `npm run format` before opening a PR.
