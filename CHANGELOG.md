@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- 日志工具与现行契约对齐：`log_query` / `log_export` / `log_sync` 只动 host 缓存，不再向设备要历史。`event_query` 返回 `supported:false`。
+- 契约去掉 HELLO `proto` 和 x86 `history:"ring"`。`open` 可传 `claim_writer` 抢写权。
+
 ## 0.1.5
 
 - x86 hub 数据面改为 BATCH。ACK 后释放发送缓存；超出缓存先 GAP 再丢。

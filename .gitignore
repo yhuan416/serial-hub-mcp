@@ -3,6 +3,8 @@ coverage/
 *.log
 *.tgz
 .env
+docker/*.env
+docker/remotes.json
 .DS_Store
 report.xml
 eslint-report.json

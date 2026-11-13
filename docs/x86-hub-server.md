@@ -48,7 +48,7 @@ token 读取顺序：`--token` > `SERIAL_HUB_SERVER_TOKEN` > `<data-dir>/token`�
 | `--segment-bytes` | `64MiB` | 单段日志上限 |
 | `--retention-bytes` | `4GiB` | 每端口磁盘保留上限 |
 | `--retention-days` | `7` | 按天数淘汰旧段 |
-| `--ram-entries` | `20000` | RAM 窗口条数（LOG_QUERY 可见范围） |
+| `--ram-entries` | `20000` | hub 自己的行窗口条数。agent 查的是 MCP host 日志，不是这个窗口 |
 | `--max-frame` | `1MiB` | 单帧 JSON 上限（x86 可以比 ESP32 放宽） |
 | `--max-hold-ms` | `30000` | READ 长轮询硬上限 |
 | `--scan-interval-ms` | `2000` | 端口热插拔扫描周期 |
@@ -73,11 +73,10 @@ n100（讯美 wifi/dsp 两路 ttyACM）可直接用：
 docker compose -f docker/docker-compose.n100.yml up -d   # 自动 pull Harbor 镜像
 ```
 
-- 镜像：`docker/serial-hub-server.Dockerfile`（node:22-slim）。
-- 串口通过 `devices:` + `group_add: ["20"]`（dialout）暴露；动态插拔可改 `privileged: true`。
-- 容器内 `/sys` 与宿主机共享，`SerialPort.list()` 可能列出未映射的串口；服务以 `/dev`
-  节点是否存在为准过滤，所以只有 `--device` 映射进来的端口会出现在 `INFO.ports`。
-- 挂载 `/run/udev:/run/udev:ro` 才能读到厂商/序列号/VID/PID（否则只有 path/id）。
+- 镜像：`docker/serial-hub-server.Dockerfile`（node:24-trixie-slim）。
+- 不要逐个 `--device`，也不要为了热插拔开 `privileged`。绑定宿主机 `/dev`，只读挂 `/run/udev`，再用 `device_cgroup_rules` 放行 `c 166:* rmw`（ttyACM）和 `c 188:* rmw`（ttyUSB）。不要放行 `c 4:*`。
+- `group_add: ["20"]` 对应 Debian 系 `dialout`。hub 每 2 秒扫描；节点不在容器里，或 cgroup 没放行，端口就不会出现或打不开。
+- 扫描只加不减。拔掉的端口会留在列表里，下次打开失败。
 - v1 参数可用环境变量：`SERIAL_HUB_SERVER_CAPTURE_LINGER_MS`、
   `SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES`、`SERIAL_HUB_SERVER_WINDOW_BYTES`、
   `SERIAL_HUB_SERVER_MAX_WINDOW_BYTES`、`SERIAL_HUB_SERVER_LEASE_MS`。
@@ -104,7 +103,7 @@ dump_to_file/log_query/log_stats/log_export` 等工具全部可用。
 - **多端口**：一个服务暴露整机串口，MCP 侧按 `port_id` 选路。
 - **大缓冲**：每端口默认 64 MiB ring（可调），921600/1.5M/3M 波特率下不易丢字节。
 - **更大帧**：`max_frame` 默认 1 MiB。
-- **热插拔**：定期重扫，USB 串口插拔后自动出现在端口列表。
+- **热插拔**：进程每 2 秒重扫。原生跑在宿主机上，插上即可出现。容器里还要绑定 `/dev`，并用 `c 166:*` / `c 188:*` 放行，不能只在启动时 `--device` 写死节点。扫描只加不减，拔出的端口不会自动消失。
 
 ## 7. 行为说明
 
@@ -149,4 +148,4 @@ sudo cat /var/lib/serial-hub-server/token     # 取 token 填到 MCP
 | `port_not_found` | `INFO.ports` 里没有该 id；检查 `--ports` 过滤、用户权限 |
 | 读到的全是乱码 | 波特率不对；用 `CONFIG` 重新下发 |
 | 日志为空 | 端口尚未有数据；先 `CONFIG` 打开端口 |
-| `LOG_EXPORT` 很慢 | 段索引很大；缩小 `--segment-bytes` 或按 `seq_from` 限定 |
+| `log_query` 是空的 | host 还没切出整行。先 `receive` 或等一行结束。设备不提供日志 |

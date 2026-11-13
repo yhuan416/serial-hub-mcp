@@ -753,6 +753,7 @@ class ConnectionManager {
       v1_resume: args.v1_resume,
       v1_reconnect: args.v1_reconnect,
       v1_reconnect_base_ms: args.v1_reconnect_base_ms,
+      claim_writer: args.claim_writer === true,
     };
 
     if (transport === "remote") {

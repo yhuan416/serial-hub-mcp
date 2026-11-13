@@ -1,0 +1,58 @@
+# MCP 只做中心，不挂串口。
+# 配置和缓存都在宿主机固定目录，删容器不会丢。
+#
+#   /var/lib/serial-hub-mcp/config/mcp.env
+#   /var/lib/serial-hub-mcp/config/remotes.json
+#   /var/lib/serial-hub-mcp/data/          日志、抓取、游标、v1 缓存
+#   /var/lib/serial-hub-server/server.env
+#   /var/lib/serial-hub-server/data/
+#
+#   sudo mkdir -p /var/lib/serial-hub-mcp/{config,data} /var/lib/serial-hub-server/data
+#   sudo chown -R 1000:1000 /var/lib/serial-hub-mcp /var/lib/serial-hub-server
+#   sudo cp docker/serial-hub-mcp.env.example /var/lib/serial-hub-mcp/config/mcp.env
+#   sudo cp docker/serial-hub-server.env.example /var/lib/serial-hub-server/server.env
+#   sudo cp docker/remotes.json.example /var/lib/serial-hub-mcp/config/remotes.json
+#   sudo chmod 600 /var/lib/serial-hub-mcp/config/mcp.env /var/lib/serial-hub-server/server.env
+#   # LOCAL_HUB_TOKEN 与 SERIAL_HUB_SERVER_TOKEN 必须相同
+#   docker compose -f docker/docker-compose.mcp.yml --profile local up -d
+#
+# 只要中心、本机 hub 另外部署时，去掉 --profile local。
+# 此时 remotes.json 里的 local 改成宿主机可达地址，不要用 serial-hub-server 这个容器名。
+
+services:
+  serial-hub-mcp:
+    image: harborcn.fujikam.com:14743/ipcs/serial-hub-mcp:0.1.5
+    container_name: serial-hub-mcp
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    env_file:
+      - /var/lib/serial-hub-mcp/config/mcp.env
+    volumes:
+      - /var/lib/serial-hub-mcp/config:/config
+      - /var/lib/serial-hub-mcp/data:/data
+
+  serial-hub-server:
+    profiles: ["local"]
+    image: harborcn.fujikam.com:14743/ipcs/serial-hub-server:0.1.5
+    container_name: serial-hub-server
+    restart: unless-stopped
+    ports:
+      - "7000:7000"
+    environment:
+      SERIAL_HUB_SERVER_LISTEN: 0.0.0.0:7000
+      SERIAL_HUB_SERVER_DATA_DIR: /data
+      SERIAL_HUB_SERVER_PORTS: /dev/ttyUSB,/dev/ttyACM,/dev/serial/
+    env_file:
+      - /var/lib/serial-hub-server/server.env
+    # 不写死 ttyACM0 这类节点。/dev 让新节点出现；cgroup 按设备号放行。
+    # 166=ttyACM，188=ttyUSB。不要加 c 4:*（那是控制台和 ttyS）。
+    volumes:
+      - /var/lib/serial-hub-server/data:/data
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    device_cgroup_rules:
+      - "c 166:* rmw"
+      - "c 188:* rmw"
+    group_add:
+      - "20"

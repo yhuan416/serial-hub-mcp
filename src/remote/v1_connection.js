@@ -605,6 +605,8 @@ export class CaptureCache {
     return {
       connection_id: this.connectionId,
       transport: "remote",
+      supported: false,
+      reason: "当前链路没有设备事件日志，控制面事件不在发送缓存里",
       source: "host-cache",
       events: [],
       count: 0,
@@ -785,6 +787,7 @@ export class V1Connection {
       window_bytes: this.config.v1_window_bytes,
       ack_interval_bytes: this.config.v1_ack_interval_bytes,
       lease_ms: this.leaseMs,
+      claim_writer: this.config.claim_writer === true,
     };
     const saved =
       this.hasConnectedOnce && this.captureId
@@ -893,7 +896,7 @@ export class V1Connection {
         this.socket?.destroy();
       } catch (_) {}
       this.socket = null;
-      if (err.code === "unauthorized" || err.code === "proto_mismatch") {
+      if (err.code === "unauthorized") {
         this.closed = true;
         this.reconnecting = false;
         return;
@@ -1344,26 +1347,6 @@ export class V1Connection {
     return data.length;
   }
 
-  async fetchHistory(opts = {}) {
-    const res = await this._control("history_query", {
-      port: this.port,
-      capture_id: this.captureId,
-      ...(opts.dir ? { dir: opts.dir } : {}),
-      ...(Number.isFinite(opts.seq_from) ? { seq_from: opts.seq_from } : {}),
-      ...(Number.isFinite(opts.seq_to) ? { seq_to: opts.seq_to } : {}),
-      ...(opts.cursor ? { cursor: opts.cursor } : {}),
-      limit: opts.limit || 500,
-    });
-    const entries = (res.entries || []).map((e) => ({
-      seq: e.seq,
-      ts: e.ts,
-      dir: e.dir,
-      offset: e.offset,
-      bytes: Buffer.from(e.b64 || e.hex || "", e.b64 ? "base64" : "hex"),
-    }));
-    return { ...res, entries };
-  }
-
   async setLine({ dtr, rts } = {}) {
     const res = await this._control("set_lines", {
       port: this.port,
@@ -1463,32 +1446,7 @@ export class V1LogStore {
     this.config = conn.config || {};
   }
 
-  async _backfill(opts = {}) {
-    if (!Number.isFinite(opts.seq_from)) return;
-    const earliest = this.cache.earliestSeq;
-    if (earliest != null && opts.seq_from >= earliest) return;
-    let cursor = null;
-    for (let page = 0; page < 20; page += 1) {
-      const res = await this.conn.fetchHistory({
-        seq_from: opts.seq_from,
-        seq_to: opts.seq_to,
-        dir: opts.dir,
-        cursor,
-        limit: 1000,
-      });
-      if (!res.entries.length) break;
-      this.cache.merge(res.entries);
-      if (!res.truncated || !res.next_cursor) break;
-      cursor = res.next_cursor;
-    }
-  }
-
   async query(opts = {}) {
-    try {
-      await this._backfill(opts);
-    } catch (_) {
-      /* 回源失败则只用本地缓存 */
-    }
     return this.cache.query(opts);
   }
 
@@ -1501,10 +1459,45 @@ export class V1LogStore {
   }
 
   async export(opts = {}) {
-    try {
-      await this._backfill(opts);
-    } catch (_) {}
     return this.cache.export(opts);
+  }
+
+  async sync(opts = {}) {
+    const root =
+      opts.out_dir ||
+      path.join(
+        process.env.SERIAL_HUB_MCP_SYNC_DIR ||
+          path.join(
+            process.env.XDG_CACHE_HOME || path.join(requireHome(), ".cache"),
+            "serial-hub-mcp",
+            "remote-sync",
+          ),
+        String(this.conn.endpoint || this.id).replace(/[^A-Za-z0-9._-]+/g, "_"),
+      );
+    fs.mkdirSync(root, { recursive: true });
+    const statePath = path.join(root, "state.json");
+    let state = {};
+    try {
+      state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    } catch {
+      state = {};
+    }
+    const dirs = opts.dir === "tx" || opts.dir === "rx" ? [opts.dir] : ["rx", "tx"];
+    const files = [];
+    for (const dir of dirs) {
+      const known = Number.isFinite(Number(state[dir]));
+      const file = path.join(root, `${dir}.log`);
+      const exported = this.cache.export({
+        dir,
+        seq_from: known ? Number(state[dir]) + 1 : undefined,
+        path: file,
+        append: known && fs.existsSync(file),
+      });
+      if (exported.last_seq != null) state[dir] = exported.last_seq;
+      files.push({ dir, ...exported });
+    }
+    fs.writeFileSync(statePath, JSON.stringify(state));
+    return { source: "host-cache", out_dir: root, files, state };
   }
 
   events() {

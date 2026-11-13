@@ -116,7 +116,7 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `profile_list/save/delete` | Reusable named connection profiles |
 | `log_query/stats/clear` | Search, inspect and clear logs (no `connection_id` = local + remote) |
 | `log_export` / `log_sync` | Copy host log lines to a file. The host cache is the log; the device is only a send buffer |
-| `event_query` | Query remote control-plane events when the bridge still records them |
+| `event_query` | Not a device event log on this link. Returns `supported:false` |
 | `cache_set` | Persist a remote send-cache size in device NVS |
 | `service_info` | Service name, version, changelog |
 

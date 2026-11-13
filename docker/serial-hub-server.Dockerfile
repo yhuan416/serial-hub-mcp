@@ -1,9 +1,9 @@
 # serial-hub-server (x86/Linux) container image
 #
 # docker build -f docker/serial-hub-server.Dockerfile -t serial-hub-server:latest .
-# docker run --rm -p 7000:7000 -v shub-data:/data \
+# docker run --rm -p 7000:7000 -v shub-data:/data -v /dev:/dev -v /run/udev:/run/udev:ro \
+#   --device-cgroup-rule 'c 166:* rmw' --device-cgroup-rule 'c 188:* rmw' --group-add 20 \
 #   -e SERIAL_HUB_SERVER_TOKEN=... \
-#   --device /dev/ttyUSB0 --device /dev/ttyACM0 \
 #   serial-hub-server:latest
 
 FROM node:24-trixie-slim

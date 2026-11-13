@@ -319,7 +319,8 @@ export const connTools = (manager) => [
       "transport=remote 时改用 endpoint（ESP32 无线串口桥，如 tcp://esp32s3-01:7000），不使用 port/sn/vid/pid。" +
       "baud_rate 默认 115200；data_bits 默认 8；stop_bits 默认 1；parity 默认 none；flow_control 默认 none。" +
       "newline 设置发送默认追加的换行（write/transact 未显式指定时的默认）。" +
-      "成功后返回 connection_id，后续 read/write/transact 用它。",
+      "成功后返回 connection_id，后续 read/write/transact 用它。" +
+      "同一路 UART 只有一个 writer。第二路要写时传 claim_writer:true。",
     inputSchema: z.object({
       transport: z
         .enum(["serial", "remote"])
@@ -362,6 +363,10 @@ export const connTools = (manager) => [
         .positive()
         .optional()
         .describe("v1 重连初始退避毫秒数，默认 500（指数退避，上限 30s）"),
+      claim_writer: z
+        .boolean()
+        .optional()
+        .describe("远端已有 writer 时抢走写权。默认 false，第二路只读"),
       port: z.string().optional().describe("串口路径，如 /dev/ttyUSB0、/dev/ttyACM0、COM3"),
       profile: z
         .string()

@@ -1,0 +1,11 @@
+.git
+node_modules
+test
+test-utils
+coverage
+*.log
+report.xml
+eslint-report.json
+gl-code-quality-report.json
+docker/*.env
+!docker/*.env.example

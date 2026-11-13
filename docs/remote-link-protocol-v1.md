@@ -154,10 +154,9 @@ x86 hub 当前的「一帧一行」不符合本版，后续必须改成同样的
 ### 5.1 HELLO / HELLO_ACK
 
 ```json
-HELLO { "proto": "v1", "token": "…", "client_id": "mcp-A" }
+HELLO { "token": "…", "client_id": "mcp-A" }
 
 HELLO_ACK { "ok": true, "result": {
-  "proto": "v1",
   "fw_version": "1.0.0",
   "board": "esp32s3",
   "boot_id": "b7c1",
@@ -167,9 +166,9 @@ HELLO_ACK { "ok": true, "result": {
 }}
 ```
 
-- `proto` 不是 `"v1"` → `proto_mismatch` 并关闭。
+- 不传、不校验 `proto`。没有版本协商，也没有 v0 回退。
 - token 不符 → `unauthorized` 并关闭。未配置 token 则跳过鉴权。
-- host 要求 `result.proto == "v1"` 且 `result.caps.push == true`，否则拒绝。
+- host 要求 `result.caps.push == true` 且 `result.caps.batch == true`，否则拒绝。
 - `ports` 在 `result` 顶层，不在 `caps` 里面。
 - 这里的 `session_id` 是这条 TCP 连接的 id。订阅 session 在 SUBSCRIBE 应答里另给。
 
@@ -262,14 +261,12 @@ host 依赖这些字段：`session_id`、`port_slot`、`capture_id`、`mode`、`
 - `set_lines` 的 `dtr`/`rts` 省略表示不动。未接线 → `unsupported`。
 - `break` 的 `duration_ms` 缺省 300。
 
-### 5.7 HISTORY_*（可选，ESP32 不做）
+### 5.7 HISTORY_*
 
-`history_info` / `history_query` / `history_export`。
+`history_info` / `history_query` / `history_export` 一律回 `unsupported`。
 
-- `caps.capture.history` 为 `"none"` 时，这三个 op 必须回 `unsupported`。
-- ESP32 必须声明 `"none"`。它不是存储端。
-- x86 可以声明 `"ring"` 并实现 `history_query`，仅作 host 缓存缺口时的补充。缺了也不影响主路径。
-- host 默认只用自己的缓存。不要把远端历史当权威。
+- `caps.capture.history` 固定 `"none"`。ESP32 和 x86 都不是日志库。
+- host 只用自己的缓存。不要向远端要历史。
 
 ### 5.8 PING
 
@@ -317,7 +314,7 @@ agent 不看到帧，也不区分本地串口和远端。工具语义与 mining-
 
 | 工具 | 语义 |
 |---|---|
-| `open` | 建会话。远端即 HELLO + CONFIG + SUBSCRIBE。`protocol:"v1"` |
+| `open` | 建会话。远端即 HELLO + CONFIG + SUBSCRIBE。不传 protocol。`claim_writer:true` 时向已有 writer 要写权 |
 | `read` | 读 host 缓存里尚未被这次 read 消费的字节。cat 语义 |
 | `write` | 只发。非 writer 失败 `not_controller` |
 | `transact` | 先记下 host 的 `rxCursor` 当 barrier，再 write，再 read。写之前的字节不算回包。barrier 在 host，不依赖远端历史 |
@@ -325,6 +322,9 @@ agent 不看到帧，也不区分本地串口和远端。工具语义与 mining-
 | `dump_to_file` | 把已在 host 的字节流落盘 |
 | `set_dtr_rts` / `send_break` | writer 控制线 |
 | `log_query` / `log_stats` | 只查 host 日志。host 切行后才能查到 |
+| `log_export` / `log_sync` | 导出 host 已切开的日志。不向设备要历史 |
+| `event_query` | 当前链路不提供。返回 `supported:false` |
+| `cache_set` | 写远端发送缓存上限到 NVS，下次新建 capture 生效 |
 
 断线重连：`SUBSCRIBE { from: { capture_id, offset: last_acked } }`。
 
@@ -352,12 +352,13 @@ agent 不看到帧，也不区分本地串口和远端。工具语义与 mining-
   "can_set_lines": true,
   "can_break": true,
   "lease_ms": 30000,
-  "events": true
+  "events": false
 }
 ```
 
 - `batch` 必须为 true。v1.0 没有非 BATCH 的数据面。
-- `history`：`"none"` | `"ring"` | `"segmented"`。ESP32 固定 `"none"`。
+- `history` 固定 `"none"`。没有 `"ring"` / `"segmented"`。
+- `events` 固定 false。当前链路没有设备事件日志。
 - `ports` 不在 caps 内。
 
 ---
@@ -369,10 +370,10 @@ agent 不看到帧，也不区分本地串口和远端。工具语义与 mining-
 | `bad_frame` | 帧头或长度非法 | 关闭并重连 |
 | `bad_request` | JSON/字段非法 | 不重试这一条 |
 | `unauthorized` | token 错或未 HELLO | 关闭 |
-| `proto_mismatch` | 不是 v1 | 关闭，不要降到 v0 再猜 |
+| `proto_mismatch` | 已废弃。实现不得再发出，host 也不再据此协商 |
 | `port_not_found` | 端口 id 不存在 | 不重试 |
 | `capture_expired` | capture_id 已死 | 去掉 `from` 重新 SUBSCRIBE |
-| `not_controller` | 非 writer | 可 `claim_writer` 后再试 |
+| `not_controller` | 非 writer | 再 `open({claim_writer:true})`，或 subscribe 带 `claim_writer` |
 | `unsupported` | 能力没有（HISTORY_*、未接线的控制线） | 不要当存储失败 |
 | `unknown_op` | op 不认识 | 不重试 |
 | `lease_expired` | 会话租约到 | 重新 SUBSCRIBE，capture 可能还在 |
@@ -416,14 +417,14 @@ agent 不看到帧，也不区分本地串口和远端。工具语义与 mining-
 新实现至少要满足：
 
 1. 帧头 10 字节；DATA 头 30 字节；ACK 21 字节。没有第二个 `capture_id`。
-2. HELLO 失败关闭。成功的 HELLO_ACK 含 `proto:"v1"`、`caps.push:true`、顶层 `ports`。
+2. HELLO 失败关闭。成功的 HELLO_ACK 含 `caps.push:true`、`caps.batch:true`、`caps.capture.history:"none"`、顶层 `ports`。没有 `proto`。
 3. `capture_id` 在 `[1, 2^53-1]`。
 4. CONFIG 不创建 capture；订阅前的 CONFIG 成功。
 5. 已有 capture 时，不带 `from` 的 SUBSCRIBE 是附着，不是再开一个。
 6. 过期 `capture_id` 回 `capture_expired`，不是 `mode:"gap"`。
 7. DATA 必须带 BATCH。帧内 seq 被 host 忽略；host 按 `\n` 切行。半行跨帧拼接。
 8. ACK 之后远端可以删缓存。未 ACK 的字节要么还在，要么已经发过 GAP。
-9. ESP32：`history:"none"`，HISTORY_* 回 `unsupported`。x86 与 ESP32 都只发 BATCH。
+9. ESP32 与 x86：`history:"none"`，HISTORY_* 回 `unsupported`。两边都只发 BATCH。
 10. 非 writer 的 WRITE/SET_LINES/BREAK 回 `not_controller`。
 11. `transact` 的 barrier 用 host 收到 write 之前的 offset，不向远端要历史。
 
@@ -455,4 +456,4 @@ v1.1 候选：配额/权限、lease 续期、TLS、KCP、端口热插拔事件�
 
 尚未对齐：
 
-- ESP32 双路高速断线与 `config` 超时。RAM 满后溢到 SD/Flash 仍只做发送缓存。
+- 无。ESP32 的旧行日志不再写入。SD 只留给发送缓存溢出。

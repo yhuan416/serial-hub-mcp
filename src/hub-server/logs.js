@@ -2,8 +2,8 @@
 //
 // 设计目标（相比 ESP32 桥）：
 //   - 多端口、每端口独立 seq / 环形缓冲 / 磁盘分段；
-//   - RAM 窗口可配置（默认 20000 条）供 LOG_QUERY；
-//   - 磁盘 raw+index 分段（20 字节索引记录，与协议一致）供 LOG_EXPORT / LOG_STATS；
+//   - RAM 窗口可配置（默认 20000 条），只给 hub 自己留行；
+//   - 磁盘 raw+index 分段（20 字节索引记录）。agent 不通过设备 LOG_* 来查它；
 //   - 按容量/天数保留，可 ACK 归档水位。
 //
 // 索引记录（LE）：offset u64 | seq u32 | tick u32 | len u16 | dir u8 | pad u8
@@ -415,7 +415,7 @@ export class SegmentStore {
     return recs;
   }
 
-  /** 按段导出（协议 LOG_EXPORT）。cursor 为段内字节偏移，dir 过滤收发方向。 */
+  /** hub 自己的分段导出。agent 不走这条，日志在 MCP host。 */
   export({ segment, dir, seqFrom, seqTo, cursor, maxBytes = 32768 } = {}) {
     this.flush();
     const id = segment || (this.active && this.active.id);
@@ -556,7 +556,7 @@ export class LineLog {
         }
         break;
       }
-      // 保留原始换行（含 \r\n），保证 LOG_EXPORT 字节级还原
+      // 保留原始换行（含 \r\n）
       const raw = this.partial.subarray(0, idx + 1);
       this._emitLine(raw, this.partialStart);
       const consumed = idx + 1;

@@ -68,7 +68,7 @@ list_ports()
     { "source": "local", "ok": true, "count": 1 },
     { "source": "remote", "name": "lab-x86", "endpoint": "tcp://192.168.1.50:7000",
       "ok": true, "count": 2, "ports_generation": 3,
-      "protocol_rev": "0.1", "caps": { ... }, "time": { ... } },
+      "caps": { "push": true, "batch": true }, "time": { ... } },
     { "source": "remote", "name": "esp32-s3", "endpoint": "tcp://192.168.4.67:7000",
       "ok": false, "error": "connect ECONNREFUSED ..." }
   ],

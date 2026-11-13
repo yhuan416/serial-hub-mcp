@@ -291,7 +291,7 @@ test("v1: token 错误被拒绝", async (t) => {
   assert.equal(err.code, "unauthorized");
 });
 
-test("v1: HISTORY_QUERY 分页与 capture 校验", async (t) => {
+test("v1: history_query 返回 unsupported", async (t) => {
   const { connect, serials } = await setup(t);
   const c = await connect();
   await c.hello("t1");

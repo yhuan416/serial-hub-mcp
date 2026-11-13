@@ -13,11 +13,9 @@ export const logTools = (logStore) => {
       name: "log_query",
       title: "检索串口日志",
       description:
-        "检索串口日志条目。日志按行切分（\\n / \\r\\n），每条含全局 seq 索引、epoch 时间戳 ts、方向 dir(rx/tx)、内容 line/hex/bytes。" +
-        "支持按连接、方向、索引范围(seq_from/seq_to)、时间范围(time_from/time_to)、内容子串(contains)、正则(regex)过滤。" +
-        "本地连接查 host LogStore（内存+JSONL 分片）；远端连接代理设备 LOG_QUERY（RAM 窗口，历史用 log_export）。" +
-        "远端 order=desc 默认从最新开始；contains/regex 会分页扫描 RAM 窗口（有上限），time_from/time_to 暂不支持（设备无 NTP）。" +
-        "返回 entries（含 count/truncated）与 earliest_seq；远端另给 ram_earliest_seq/sd_earliest_seq，二者含义不同。",
+        "检索 host 已切开的串口日志。日志按行切分（\\n / \\r\\n），每条含 seq、epoch 时间戳 ts、方向 dir(rx/tx)、内容 line。" +
+        "支持按连接、方向、seq 范围、时间范围、子串和正则过滤。本地和远端都只查 host 缓存，不向设备要历史。" +
+        "host 还没切出整行的尾巴查不到。返回 entries（含 count/truncated）与 earliest_seq。",
       inputSchema: z.object({
         connection_id: connId.optional().describe("连接 ID；省略则全查"),
         dir: z.enum(["rx", "tx"]).optional().describe("方向过滤"),
@@ -28,7 +26,7 @@ export const logTools = (logStore) => {
         contains: z.string().optional().describe("内容子串匹配（区分大小写，作用于 line）"),
         regex: z.string().optional().describe("正则匹配（作用于 line）"),
         limit: z.number().int().positive().optional().describe("返回条数上限，默认 100"),
-        cursor: z.string().optional().describe("分页游标（远端 LOG_QUERY 的 next_cursor）"),
+        cursor: z.string().optional().describe("分页游标，取上一页的 next_cursor"),
         order: z.enum(["asc", "desc"]).optional().describe("排序，默认 asc（旧→新）"),
         include_hex: z
           .boolean()
@@ -46,24 +44,19 @@ export const logTools = (logStore) => {
 
     defineTool({
       name: "log_export",
-      title: "导出远端设备权威日志",
+      title: "导出 host 日志",
       description:
-        "把远端连接（transport=remote）的设备 SD 权威日志按 seq/方向分页导出到 host 文件。" +
-        "和 dump_to_file 的区别：dump_to_file 是实时抓 RX；log_export 是事后从设备 SD 取历史。" +
-        "需要设备 has_sd=true 且支持 LOG_EXPORT；本地连接请用 dump_to_file。" +
-        "默认写入 $SERIAL_HUB_MCP_DUMPS_DIR（~/.cache/serial-hub-mcp/dumps）。" +
-        "设备当前无 NTP，time_from/time_to 会被忽略（设备 ts 是 uptime tick）。",
+        "把 host 已切开的日志按方向和 seq 导出到文件。设备不是日志库，不会向设备要历史。" +
+        "和 dump_to_file 的区别：dump_to_file 是实时抓还没切行的 RX；log_export 导出已经切开的行。" +
+        "本地连接没有这个导出接口时用 log_query。默认写入 $SERIAL_HUB_MCP_DUMPS_DIR。",
       inputSchema: z.object({
         connection_id: connId.describe("远端连接 ID（open 返回）"),
         dir: z.enum(["rx", "tx"]).optional().describe("方向，默认 rx"),
         seq_from: z.number().int().optional().describe("起始 seq（含）"),
         seq_to: z.number().int().optional().describe("结束 seq（含）"),
-        time_from: z.number().int().optional().describe("（暂忽略，设备无 NTP）"),
-        time_to: z.number().int().optional().describe("（暂忽略，设备无 NTP）"),
-        segment: z
-          .string()
-          .optional()
-          .describe("SD segment ID；省略导出当前活动 segment（log_stats.segments 查看）"),
+        time_from: z.number().int().optional().describe("时间下界（epoch ms）；当前导出按 seq，不按时间裁剪"),
+        time_to: z.number().int().optional().describe("时间上界（epoch ms）；当前导出按 seq，不按时间裁剪"),
+        segment: z.string().optional().describe("忽略。当前链路没有设备 SD 段"),
         path: z.string().optional().describe("输出文件路径（优先于 out_dir）"),
         out_dir: z.string().optional().describe("输出目录（path 未给时用）"),
         max_bytes: z
@@ -71,22 +64,21 @@ export const logTools = (logStore) => {
           .int()
           .positive()
           .optional()
-          .describe("每次 LOG_EXPORT 的字节上限，默认 32768"),
+          .describe("忽略。导出的是 host 已切开的行，不按设备页大小分页"),
       }),
       handler: async (args) => ({ ok: true, response: await requireStore().export(args) }),
     }),
 
     defineTool({
       name: "log_sync",
-      title: "增量归档远端日志",
+      title: "增量归档 host 日志",
       description:
-        "把远端 SD 日志增量导出到 host 目录，按 segment/方向维护 state.json 水位，只导出自上次水位之后的新 seq。" +
-        "默认导出所有 segment 的 rx+tx；这是长期采集用的 collector，不是实时 dump_to_file。" +
-        "可重复调用；同一 segment/dir 会追加到 <out_dir>/<segment>-<dir>.log。",
+        "把 host 已切开的日志按方向增量追加到目录。水位写在该目录的 state.json，只导出上次之后的新 seq。" +
+        "设备不是日志库。可重复调用；同一方向追加到 <out_dir>/<dir>.log。不是实时 dump_to_file。",
       inputSchema: z.object({
         connection_id: connId.describe("远端连接 ID（open 返回）"),
         dir: z.enum(["rx", "tx"]).optional().describe("方向；省略则 rx+tx"),
-        segment: z.string().optional().describe("只同步指定 segment；省略全部"),
+        segment: z.string().optional().describe("忽略。当前链路没有设备 SD 段"),
         out_dir: z
           .string()
           .optional()
@@ -96,19 +88,18 @@ export const logTools = (logStore) => {
           .int()
           .positive()
           .optional()
-          .describe("每轮 LOG_EXPORT 页数上限（默认 10000）"),
-        max_bytes: z.number().int().positive().optional().describe("每页字节上限（默认 32768）"),
+          .describe("忽略。同步的是 host 缓存，不向设备翻页"),
+        max_bytes: z.number().int().positive().optional().describe("忽略。同步的是 host 已切开的行"),
       }),
       handler: async (args) => ({ ok: true, response: await requireStore().sync(args) }),
     }),
 
     defineTool({
       name: "event_query",
-      title: "查询设备控制面事件",
+      title: "查询控制面事件",
       description:
-        "查询远端设备的控制面事件（与串口数据日志分离）：SD 挂载/格式化/重挂载、" +
-        "SD 写/fsync 失败、ring 丢字节等。设备侧事件是 RAM 环形队列（默认 64 条），" +
-        "同时会打印到串口控制台。仅远端连接支持。",
+        "当前链路没有设备事件日志。调用返回 supported:false，不要把它当成没有故障。" +
+        "串口数据用 log_query；链路是否断开看 get_status。",
       inputSchema: z.object({
         connection_id: connId.describe("远端连接 ID（open 返回）"),
         seq_from: z.number().int().optional().describe("起始事件 seq（含）"),
@@ -139,11 +130,11 @@ export const logTools = (logStore) => {
       name: "log_clear",
       title: "清空串口日志",
       description:
-        "清空指定连接的日志：本地为内存 + 已落盘文件；远端省略 segment 会清空设备所有 segment 和 RAM，指定 segment 只清该段。清空后不可恢复。" +
-        "省略 connection_id 会清空本地 + 所有远端，必须显式传 confirm=true。",
+        "清空 host 上已切开的日志。远端只清 host 缓存，不清设备。清空后不可恢复。" +
+        "省略 connection_id 会清空本进程全部 host 日志，必须显式传 confirm=true。",
       inputSchema: z.object({
         connection_id: connId.optional().describe("连接 ID；省略则清空本地与所有远端"),
-        segment: z.string().optional().describe("远端 SD segment ID；省略清空设备当前活动 segment"),
+        segment: z.string().optional().describe("忽略。当前链路没有设备 SD 段"),
         confirm: z.boolean().optional().describe("全量清空（不传 connection_id）时必须为 true"),
       }),
       handler: async (args) => ({

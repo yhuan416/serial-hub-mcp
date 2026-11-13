@@ -180,7 +180,7 @@ export class LogRouter {
 
   async _clearAll(opts = {}) {
     if (opts.confirm !== true) {
-      throw new Error("全量清空需要 confirm=true（会清本地日志并清空所有远端设备当前日志）");
+      throw new Error("全量清空需要 confirm=true（会清本进程全部 host 日志）");
     }
     const cleared = [];
     const errors = [];
@@ -209,7 +209,7 @@ export class LogRouter {
     const b = id ? this.backendFor(id) : this.localStore;
     if (!b) throw new Error("日志功能未启用");
     if (typeof b.export !== "function") {
-      throw new Error("当前连接不支持 log_export（需要远端 SD 权威日志；本地请用 dump_to_file）");
+      throw new Error("当前连接不支持 log_export（本地请用 log_query 或 dump_to_file）");
     }
     return b.export(opts);
   }
@@ -218,18 +218,18 @@ export class LogRouter {
     const b = connection_id ? this.backendFor(connection_id) : this.localStore;
     if (!b) throw new Error("日志功能未启用");
     if (typeof b.events !== "function") {
-      throw new Error("当前连接不支持 event_query（需要远端设备的事件日志）");
+      throw new Error("当前连接不支持 event_query（当前链路没有设备事件日志）");
     }
     return b.events(opts);
   }
 
   sync(opts = {}) {
     const id = opts.connection_id;
-    if (!id) throw new Error("log_sync 需要 connection_id（仅远端连接）");
+    if (!id) throw new Error("log_sync 需要 connection_id");
     const b = this.backendFor(id);
     if (!b) throw new Error("日志功能未启用");
     if (typeof b.sync !== "function") {
-      throw new Error("当前连接不支持 log_sync（需要远端 SD 权威日志）");
+      throw new Error("当前连接不支持 log_sync（没有 host 日志缓存）");
     }
     return b.sync(opts);
   }

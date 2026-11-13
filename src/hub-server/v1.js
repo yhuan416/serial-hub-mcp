@@ -7,7 +7,7 @@
 //   - 单 writer（CONFIG/WRITE/SET_LINES/BREAK）；
 //   - capture 内 seq/offset 从 0 开始；超出 max_bytes 丢最旧并标 GAP。
 //
-// 本实现为初版：capture 历史保存在内存（history="ring"），未实现 HISTORY_QUERY/EXPORT。
+// 发送缓存不是日志。history 固定 "none"，HISTORY_* 回 unsupported。
 
 import crypto from "node:crypto";
 
@@ -250,7 +250,7 @@ export class Capture {
       max_bytes: this.maxBytes,
       used_bytes: this.usedBytes,
       linger_ms: this.lingerMs,
-      history: "ring",
+      history: "none",
       sessions: this.sessions.size,
       writer_session_id: this.writerSessionId,
       paused: this.paused,

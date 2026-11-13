@@ -1,0 +1,19 @@
+{
+  "remotes": [
+    {
+      "name": "local",
+      "endpoint": "tcp://serial-hub-server:7000",
+      "token_env": "LOCAL_HUB_TOKEN"
+    },
+    {
+      "name": "n100",
+      "endpoint": "tcp://<n100-ip>:7000",
+      "token_env": "N100_HUB_TOKEN"
+    },
+    {
+      "name": "esp32-s3",
+      "endpoint": "tcp://<esp32-ip>:7000",
+      "token_env": "ESP32_HUB_TOKEN"
+    }
+  ]
+}

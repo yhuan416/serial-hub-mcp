@@ -142,6 +142,12 @@ test("host v1: receive / flush / log_export", async (t) => {
   const ex = await router.export({ connection_id: st.connection_id, out_dir: outDir });
   assert.ok(fs.existsSync(ex.file));
   assert.ok(fs.readFileSync(ex.file, "utf8").includes("a\r\n"));
+  const syncDir = path.join(outDir, "sync");
+  const synced = await router.sync({ connection_id: st.connection_id, out_dir: syncDir });
+  assert.equal(synced.source, "host-cache");
+  assert.ok(fs.readFileSync(path.join(syncDir, "rx.log"), "utf8").includes("a\r\n"));
+  const again = await router.sync({ connection_id: st.connection_id, out_dir: syncDir });
+  assert.equal(again.files.find((f) => f.dir === "rx").lines, 0);
   fs.rmSync(outDir, { recursive: true, force: true });
 });
 
@@ -184,7 +190,7 @@ test("host v1: 断线续传（resume）与 capture 过期后新建", async (t) =
   await manager.close(third.connection_id);
 });
 
-test("host v1: 本地缓存清空后从远端 HISTORY_QUERY 回填", async (t) => {
+test("host v1: 清空后不再向设备要历史", async (t) => {
   const { manager, serials, open } = await setup(t);
   const st = await open();
   const conn = manager.get(st.connection_id);
