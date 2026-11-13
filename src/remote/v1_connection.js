@@ -1321,6 +1321,14 @@ export class V1Connection {
     return { ...r, barrier_offset: barrier };
   }
 
+  async setCache(capBytes) {
+    const n = Number(capBytes);
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error("cap_bytes 必须是正数");
+    }
+    return this._control("cache_set", { cap_bytes: Math.floor(n) });
+  }
+
   async write(buf) {
     if (!this.writer) throw Object.assign(new Error("not writer"), { code: "not_controller" });
     const data = Buffer.from(buf);

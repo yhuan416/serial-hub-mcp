@@ -69,13 +69,13 @@ test(
       });
       await client.connect(transport);
       const tools = await client.listTools();
-      assert.equal(tools.tools.length, 21);
+      assert.equal(tools.tools.length, 22);
 
       const r = await client.callTool({ name: "service_info", arguments: {} });
       const data = JSON.parse(r.content[0].text);
       assert.equal(data.ok, true);
       assert.equal(data.response.service, "serial-hub-mcp");
-      assert.equal(data.response.tools_count, 21);
+      assert.equal(data.response.tools_count, 22);
 
       // /health 免鉴权
       const health = await fetch(`http://127.0.0.1:${port}/health`);

@@ -452,6 +452,24 @@ export const connTools = (manager) => [
   }),
 
   defineTool({
+    name: "cache_set",
+    title: "设置远端发送缓存",
+    description:
+      "把远端 RAM 发送缓存大小写入 NVS（32KiB–2MiB，4KiB 对齐）。已有 capture 下次新建才生效，避免改环形缓冲中途错位。",
+    inputSchema: z.object({
+      connection_id: connId,
+      cap_bytes: z.number().int().positive().describe("字节数，如 524288"),
+    }),
+    handler: async (args) => {
+      const conn = manager.get(args.connection_id);
+      if (!conn || typeof conn.setCache !== "function") {
+        throw new Error("cache_set 仅用于远端连接");
+      }
+      return { ok: true, response: await conn.setCache(args.cap_bytes) };
+    },
+  }),
+
+  defineTool({
     name: "close",
     title: "关闭串口",
     description: "关闭一个之前打开的串口连接。",
