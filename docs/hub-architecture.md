@@ -1,7 +1,6 @@
 # serial-hub-mcp 串口 Hub 架构
 
-> 状态：host 侧 `tcp` 远端链路、假桥与 ESP32-S3 桥固件（SD 分段续写/认证/事件）均已实现。
-> 配套契约见 [remote-link-protocol-v1.md](./remote-link-protocol-v1.md)。
+> 早期分层笔记。现行契约见 [remote-link-protocol-v1.md](./remote-link-protocol-v1.md)。目录说明见 [README.zh.md](../README.zh.md)。
 
 ## 1. 目标
 

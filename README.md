@@ -1,5 +1,7 @@
 # serial-hub-mcp
 
+中文说明：[README.zh.md](README.zh.md)。
+
 A serial-port MCP server that is also a **hub**: one process can hold multiple local
 UARTs plus remote serial endpoints — either an ESP32-S3 wireless dongle or an
 **x86/Linux `serial-hub-server`** that exposes all of its local serial ports.
@@ -35,9 +37,8 @@ line for retrieval, but the raw hex is always the source of truth.
   device or `CONFIG_BRIDGE_AUTH_TOKEN`); pass it as `open({token})`. Plaintext, so use a
   trusted LAN or a VPN/SSH tunnel.
 
-> Status: `0.1.x` — local serial, the TCP remote link, and the x86 `serial-hub-server`
-> are implemented; the ESP32-S3 firmware (`serial-hub-bridge`) supports SD segment resume,
-> auth, events and 4 MiB ring. Extra transports (`ws/udp/kcp/mqtt`) are next.
+> Status: `0.1.x` — local serial, the binary TCP remote link, and the x86
+> `serial-hub-server` are implemented. The ESP32-S3 firmware lives in `serial-hub-bridge`.
 
 ## Install
 
@@ -101,7 +102,7 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 
 | Tool | Purpose |
 |---|---|
-| `list_ports` | Enumerate serial ports; with `endpoint`/`token` it queries a remote hub (HELLO + LIST_PORTS) |
+| `list_ports` | Enumerate local ports and probe each configured remote |
 | `open` | Open a connection (`transport` / `port` / `profile` / `sn|vid|pid` / `endpoint`) |
 | `close` | Close a connection |
 | `get_status` | Connection state, counters, control-line levels |
@@ -114,9 +115,9 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `send_break` | Send a BREAK for a given duration |
 | `profile_list/save/delete` | Reusable named connection profiles |
 | `log_query/stats/clear` | Search, inspect and clear logs (no `connection_id` = local + remote) |
-| `log_export` | Export a remote device's authoritative SD log to a host file (segment/seq/dir paged) |
-| `log_sync` | Incrementally archive all new SD seq to a host directory with persisted watermarks |
-| `event_query` | Query remote control-plane events (SD mount/remount/write errors, ring drops, UART/SD queue loss) |
+| `log_export` / `log_sync` | Copy host log lines to a file. The host cache is the log; the device is only a send buffer |
+| `event_query` | Query remote control-plane events when the bridge still records them |
+| `cache_set` | Persist a remote send-cache size in device NVS |
 | `service_info` | Service name, version, changelog |
 
 ## Quick start
@@ -142,40 +143,17 @@ transact({ connection_id: "...", data: "AT", match: "OK" })
 receive({ connection_id: "...", budget_ms: 5000, idle_timeout_ms: 300 })
 ```
 
-`endpoint` chooses the transport: `tcp://` is implemented; `ws/udp/kcp/mqtt` are planned and
-plug in through `registerRemoteScheme(scheme, connector)`. `port_id` selects a device port
-when the bridge exposes more than one; `token` is sent in the `HELLO` frame. The bridge
+`endpoint` is `tcp://host:port`. `port_id` selects a device port when the bridge exposes
+more than one; `token` is sent in the `HELLO` frame. The bridge
 prints its NVS-generated token once at boot (`bridge_auth: auth token from NVS: ...`) and
 includes it in the provisioning QR when provisioning is active.
 
 ### Remote log semantics
 
-- `log_query` `order:"desc"` starts from the newest RAM entries; `ram_earliest_seq` is the
-  oldest live-window entry, while `sd_earliest_seq`/`log_stats.segments[]` describe the SD
-  segment(s). They are different seq spaces.
-- `contains`/`regex` scan up to 20 RAM pages (bounded); they are not a full SD search. Use
-  `log_export` for historical full-text work. `time_from/time_to` are not pushed down to the
-  device yet; inspect `time_source`/`ts_source` before relying on them.
-- `line`/`hex` in `log_query` are capped by the device (`log_line_max_bytes`, default 192);
-  `bytes` is the full length. `log_export` writes the raw bytes.
-- `log_stats.segments[]` lists every segment with `first_seq/latest_seq/active`; `log_export`
-  accepts `segment` to export a specific segment (default: active).
-- `log_sync` is the collector: it exports all new seq per segment/dir into
-  `~/.cache/serial-hub-mcp/remote-sync/<endpoint>/`, keeps `state.json` watermarks, and is
-  safe to call repeatedly. Remote stores auto-run it every `SERIAL_HUB_MCP_AUTO_SYNC_MS`
-  (default 60 s; `0` disables); manual calls are serialized behind auto ones.
-- After a segment/dir is fully exported, `log_sync` sends `LOG_ACK`; the device only
-  retention-deletes acknowledged segments. If the card gets critically full, it force-deletes
-  the oldest unarchived segment with `sd.retention_unacked`.
-- `log_stats` exposes loss/health counters: `rx_bytes`, `tx_bytes`, `uart_overflow_*`,
-  `ring.dropped_bytes`, `sd_write_errors`, `sd_queue.dropped*`, and `sd_broken`. A healthy
-  powered link should keep `uart_overflow_bytes=0`, `sd_queue.dropped=0`, and
-  `ring.dropped_bytes=0`.
-- `read/receive/dump_to_file/transact` include `gap`, `gap_bytes`, `ring_start_offset`,
-  `ring_end_offset`, and (where applicable) `next_offset`; `gap=true` means the live ring
-  lost bytes and you should export SD history.
-- `log_clear` with no `connection_id` requires `confirm:true` and clears local + all remote
-  current logs; remote `segment` limits the clear to one segment.
+The host splits BATCH payloads on `\n` and assigns `seq`. `log_query` reads that cache.
+The device does not keep a line index for the TCP session. `gap=true` means bytes were
+lost before they reached the host. `log_clear` with no `connection_id` requires
+`confirm:true`.
 
 ## Configuration
 
@@ -206,22 +184,13 @@ All paths use XDG defaults and can be overridden:
   `rx_dropped`.
 - Logs are line-oriented for retrieval (`\n`, trailing `\r` stripped); TX is recorded once
   per write. Non-UTF-8 content is still available as raw hex.
-- Remote capture is decoupled: the UART task only enqueues lines into a PSRAM queue; a
-  lower-priority writer task does SD raw+index I/O. Queue/overflow loss is counted/evented.
-- When the device has SNTP sync, `LOG_QUERY` entries carry epoch `ts` and per-entry
-  `ts_source:"ntp"`; otherwise they carry uptime ticks (`ts_source:"tick"`). NTP sync also
-  seals the pre-sync segment and starts a time-anchored segment (`LOG_STATS.epoch_base_ms`).
-- Each log entry is `{ seq, ts, conn, dir, offset, line, hex, bytes }`. `seq` is per log
-  source; the hub never renumbers it. For remote SD history, seq is **per segment**;
-  `log_stats.segments[]` gives each segment's range and `log_export` takes `segment`.
-- Remote SD logs resume the newest complete segment on boot/remount; segment rotation is
-  controlled by `CONFIG_BRIDGE_SD_SEGMENT_MAX_MB` (default 3072) to stay below FAT32's 4 GiB
-  per-file limit.
+- Each log entry is `{ seq, ts, conn, dir, offset, line, hex, bytes }`. Remote `seq` is
+  assigned by the host, not by the device.
 
 ## Design
 
-- [Hub architecture](docs/hub-architecture.md) — layering, pull-only data flow, per-source
-  sequencing, durable-log authority, concurrency, endpoint registry plan.
+- [Hub architecture](docs/hub-architecture.md) — early layering notes. The protocol doc wins
+  where they disagree.
 - [x86 hub-server](docs/x86-hub-server.md) — deploy a multi-port remote serial service on
   Linux (systemd unit included).
 - [Configured remotes](docs/remotes.md) — remotes.json / env, aggregated `list_ports`,
