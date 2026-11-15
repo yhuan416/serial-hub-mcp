@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- `cache_set` 的说明写明 `applied=next`：当前 capture 保持旧缓冲，最后一个会话离开并过 60 秒 linger 后新建才用新值。不是重启。
+
 ## 0.1.7 — 2026-11-16
 
 - MCP 侧日志、v1 捕获、dump 暂存和 remote-sync 默认保留 7 天，过期删除。`SERIAL_HUB_MCP_CACHE_TTL_DAYS=0` 关闭。要长期保存请把 dump 下载到本机。

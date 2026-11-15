@@ -481,7 +481,8 @@ export const connTools = (manager) => [
     name: "cache_set",
     title: "设置远端发送缓存",
     description:
-      "把远端 RAM 发送缓存大小写入 NVS（32KiB–2MiB，4KiB 对齐）。已有 capture 下次新建才生效，避免改环形缓冲中途错位。",
+      "把远端 RAM 发送缓存大小写入 NVS（32KiB–2MiB，4KiB 对齐）。" +
+      "applied=next 表示当前 capture 还用旧缓冲，最后一个会话离开并过 60 秒 linger 后新建才用新值。不是重启，也不是马上重开。",
     inputSchema: z.object({
       connection_id: connId,
       cap_bytes: z.number().int().positive().describe("字节数，如 524288"),
