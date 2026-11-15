@@ -64,7 +64,6 @@ export const logTools = (logStore) => {
         "省略 connection_id 会清空本进程全部 host 日志，必须显式传 confirm=true。",
       inputSchema: z.object({
         connection_id: connId.optional().describe("连接 ID；省略则清空本地与所有远端"),
-        segment: z.string().optional().describe("忽略。当前链路没有设备 SD 段"),
         confirm: z.boolean().optional().describe("全量清空（不传 connection_id）时必须为 true"),
       }),
       handler: async (args) => ({

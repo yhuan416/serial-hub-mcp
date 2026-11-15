@@ -102,7 +102,8 @@ open({
 
 - x86 hub：重启时设 `SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES`、`SERIAL_HUB_SERVER_RETENTION_DAYS`、`SERIAL_HUB_SERVER_LEASE_MS`。参数表见 [docs/x86-hub-server.md](docs/x86-hub-server.md)。
 - ESP32 桥：NVS 命名空间 `shb` 的 `cap_bytes`，默认 256KiB，范围 32KiB–2MiB，4KiB 对齐。也可对桥发 v1 控制帧 `{"op":"cache_set","cap_bytes":262144}`。`applied=next` 表示当前 capture 还用旧缓冲，最后一个会话离开并过 60 秒后新建才换。不是重启。
-- MCP 自己的日志、dump、v1 捕获默认留 7 天。`SERIAL_HUB_MCP_CACHE_TTL_DAYS=0` 关闭。要长期保存请 `dump_to_file` 后下载到本机。
+- MCP 自己的日志、dump、捕获缓存默认留 7 天。`SERIAL_HUB_MCP_CACHE_TTL_DAYS=0` 关闭。要长期保存请 `dump_to_file` 后下载到本机。
+- `open` 不暴露窗口、租约、重连参数。已存 profile 里如果写过这些字段，打开时仍生效。返回和 `profile_list` 里的 token 是 `***`。
 
 RAM 满了会先把未 ACK 的字节溢到 SD（`/sdcard/shb-cache/`）。写失败才 GAP。x86 hub 的缓存大小用启动参数，不走这条 NVS。
 

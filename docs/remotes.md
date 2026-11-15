@@ -67,7 +67,7 @@ list_ports()
   "sources": [
     { "source": "local", "ok": true, "count": 1 },
     { "source": "remote", "name": "lab-x86", "endpoint": "tcp://192.168.1.50:7000",
-      "ok": true, "count": 2, "ports_generation": 3,
+      "ok": true, "count": 2,
       "caps": { "push": true, "batch": true }, "time": { ... } },
     { "source": "remote", "name": "esp32-s3", "endpoint": "tcp://192.168.4.67:7000",
       "ok": false, "error": "connect ECONNREFUSED ..." }
@@ -79,7 +79,7 @@ list_ports()
 
 - 各远端**并行**查询；单个失败只体现在对应 `sources[i]`，不影响其它来源。
 - `ports[]` 每条带 `source`（`local`/`remote`）与 `remote`（远端名字）。
-- 远端条目包含 v0.1 的端口字段：`id/path/kind/manufacturer/serial_number/vendor_id/product_id/open/baud_rate/last_error/caps`。
+- 远端端口字段：`id/path/kind/manufacturer/serial_number/vendor_id/product_id/open/baud_rate/last_error/caps`。没有 `protocol_rev` / `ports_generation`。
 
 可选参数：
 

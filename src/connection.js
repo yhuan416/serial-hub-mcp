@@ -12,6 +12,11 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function publicConfig(cfg) {
+  if (!cfg || typeof cfg !== "object" || !cfg.token) return cfg;
+  return { ...cfg, token: "***" };
+}
+
 /**
  * 单个串口连接：封装 serialport，维护 always-on RX 缓冲与消费游标，
  * 提供 write / collect(read/transact) / flush / status / close。
@@ -584,7 +589,7 @@ class Connection {
       endpoint: this.config.endpoint ?? null,
       port,
       open: !this.closed,
-      config: this.config,
+      config: publicConfig(this.config),
       bytes_in: this.bytesIn,
       bytes_out: this.bytesOut,
       rx_buffered: this._length - this.handled,

@@ -16,9 +16,13 @@ const ALLOWED = [
   "flow_control",
   "rx_buffer_size",
   "newline",
-  "prompt",
-  "regex",
   "note",
+  "v1_window_bytes",
+  "v1_ack_interval_bytes",
+  "v1_lease_ms",
+  "v1_resume",
+  "v1_reconnect",
+  "v1_reconnect_base_ms",
   "claim_writer",
 ];
 
@@ -28,15 +32,20 @@ export function profileTools() {
       name: "profile_list",
       title: "列出连接 profile",
       description:
-        "列出已保存的串口连接 profile（port/波特率/换行/prompt 等参数），open({profile:name}) 一条复用。",
+        "列出已保存的串口连接 profile（端口、波特率、换行）。token 不回明文。",
       inputSchema: z.object({}),
-      handler: async () => ({ ok: true, response: { profiles: profiles.list() } }),
+      handler: async () => ({
+        ok: true,
+        response: {
+          profiles: profiles.list().map((p) => (p.token ? { ...p, token: "***" } : p)),
+        },
+      }),
     }),
     defineTool({
       name: "profile_save",
       title: "保存连接 profile",
       description:
-        "把常见连接参数存为命名 profile，供 open({profile}) 一条复用。字段与 open 一致：transport/endpoint/token/port_id/port/baud_rate/data_bits/stop_bits/parity/flow_control/rx_buffer_size/newline/prompt/regex/note。",
+        "把常见连接参数存为命名 profile，供 open({profile}) 一条复用。",
       inputSchema: z.object({
         name: z.string().min(1).describe("profile 名，如 quarkpi、uart0"),
         transport: z.enum(["serial", "remote"]).optional().describe("链路类型，默认 serial"),
@@ -54,11 +63,6 @@ export function profileTools() {
           .enum(["none", "cr", "lf", "crlf"])
           .optional()
           .describe("发送默认追加的换行，默认 none"),
-        prompt: z
-          .string()
-          .optional()
-          .describe("shell 提示符正则，receive(prompt:true) 用它作结束条件"),
-        regex: z.string().optional().describe("默认结束正则"),
         note: z.string().optional().describe("备注"),
         claim_writer: z.boolean().optional().describe("打开时抢占写权"),
       }),

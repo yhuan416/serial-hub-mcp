@@ -1411,7 +1411,7 @@ export class V1Connection {
       endpoint: this.endpoint,
       port: this.port,
       open: !this.closed,
-      config: this.config,
+      config: this.config && this.config.token ? { ...this.config, token: "***" } : this.config,
       capture_id: this.captureId,
       session_id: this.sessionId,
       mode: this.mode,

@@ -114,7 +114,7 @@ dump_to_file/log_query/log_stats` 等工具全部可用。`dump_to_file` 导出�
 
 - 日志在 host 切行后检索，不在远端建索引。
 - 明文，只在内网或 VPN 使用。
-- `LOG_CLEAR` 不带 segment = 清空全部并把 seq 归零；带 segment 只删该段。
+- `log_clear` 清空 host 已切开的日志。不带 `connection_id` 时必须 `confirm:true`。没有按段删除。
 - 写日志顺序：分配 `tx_offset` → 落日志 → 写串口（与桥一致）。
 
 ## 8. systemd 部署

@@ -147,7 +147,6 @@ async function queryRemotePorts(remote) {
   );
   try {
     const list = Array.isArray(info && info.ports) ? info.ports : [];
-    const generation = info?.ports_generation ?? null;
     const ports = list.map((p) => normalizeRemotePort(p, remote));
     return {
       ok: true,
@@ -156,8 +155,6 @@ async function queryRemotePorts(remote) {
       endpoint: remote.endpoint,
       count: ports.length,
       ports,
-      protocol_rev: info?.protocol_rev ?? null,
-      ports_generation: generation,
       caps: info?.caps ?? null,
       time: info?.time ?? null,
       remote: {
@@ -291,8 +288,6 @@ export const connTools = (manager) => [
           response: {
             source: "remote",
             endpoint: r.endpoint,
-            protocol_rev: r.protocol_rev,
-            ports_generation: r.ports_generation,
             ports: r.ports,
             caps: r.caps,
             time: r.time,
@@ -321,7 +316,7 @@ export const connTools = (manager) => [
       "newline 设置发送默认追加的换行（write/transact 未显式指定时的默认）。" +
       "成功后返回 connection_id，后续 read/write/transact 用它。" +
       "同一路 UART 只有一个 writer。第二路要写时传 claim_writer:true。" +
-      "可选 name 给这次打开起名。成功后按 endpoint+port_id+波特率去重记入 open_list。",
+      "可选 name 给这次打开起名。成功后按 endpoint+port_id+波特率去重记入 open_list。返回里的 token 为 ***。",
     inputSchema: z.object({
       transport: z
         .enum(["serial", "remote"])
@@ -342,28 +337,6 @@ export const connTools = (manager) => [
         .optional()
         .describe("已配置的 remote 名（remotes.json）；自动填充 endpoint/token，可被显式参数覆盖"),
       port_id: z.string().optional().describe("远端设备端口 ID（多端口设备用；缺省由设备选择）"),
-      v1_window_bytes: z.number().int().positive().optional().describe("流控窗口，默认 256 KiB"),
-      v1_ack_interval_bytes: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("v1 ACK 间隔，默认 32 KiB"),
-      v1_lease_ms: z.number().int().positive().optional().describe("v1 会话租约，默认 120000"),
-      v1_resume: z
-        .boolean()
-        .optional()
-        .describe("v1 重连时从上次 acked offset 续传（默认 true；false 强制新 capture）"),
-      v1_reconnect: z
-        .boolean()
-        .optional()
-        .describe("v1 断线自动重连（默认 true；false 则连接断开即结束）"),
-      v1_reconnect_base_ms: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("v1 重连初始退避毫秒数，默认 500（指数退避，上限 30s）"),
       claim_writer: z
         .boolean()
         .optional()
@@ -586,7 +559,7 @@ export const connTools = (manager) => [
     name: "get_status",
     title: "连接状态",
     description:
-      "查看指定连接（或多个连接）的打开状态、波特率、收发字节数、剩余未读字节。connection_id 省略则列出全部连接。",
+      "查看指定连接（或多个连接）的打开状态、波特率、收发字节数、剩余未读字节。connection_id 省略则列出全部连接。返回里的 token 为 ***。",
     inputSchema: z.object({
       connection_id: connId.optional().describe("连接 ID；省略则返回全部连接状态"),
     }),

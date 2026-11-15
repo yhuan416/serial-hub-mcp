@@ -165,8 +165,7 @@ All paths use XDG defaults and can be overridden:
 | `SERIAL_HUB_MCP_LOG_PART_BYTES` | `8388608` (8 MiB) | Partition roll size |
 | `SERIAL_HUB_MCP_PROFILES_DIR` | `$XDG_CONFIG_HOME/serial-hub-mcp` | Profiles |
 | `SERIAL_HUB_MCP_DUMPS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/dumps` | `dump_to_file` output |
-| `SERIAL_HUB_MCP_SYNC_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/remote-sync` | `log_sync` archive root |
-| `SERIAL_HUB_MCP_AUTO_SYNC_MS` | `60000` | remote auto `log_sync` interval; `0` disables |
+| `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7` | Delete logs, dumps, and capture cache older than this. `0` disables |
 | `SERIAL_HUB_MCP_HTTP` | unset | `1` enables HTTP mode (same as `--http`) |
 | `SERIAL_HUB_MCP_HTTP_HOST` | `127.0.0.1` | HTTP bind host |
 | `SERIAL_HUB_MCP_HTTP_PORT` | `8787` | HTTP bind port |
