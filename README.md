@@ -17,7 +17,7 @@ line for retrieval, but the raw hex is always the source of truth.
 - **Local serial** via [`serialport`](https://serialport.io/): `list_ports`, open by path,
   profile, `sn`/`vid`/`pid`, configurable baud/parity/flow control.
 - **Byte-accurate I/O**: `read` (cat), `transact` (write + wait, ignores pre-write noise),
-  `receive` (windowed capture), `dump_to_file` (stream to disk).
+  `receive` (windowed capture), `dump_to_file` (export a cached slice).
 - **Control lines**: DTR/RTS (with pulse for reset sequences) and BREAK.
 - **Durable logs**: per-connection in-memory ring + JSONL partitions on disk, queryable by
   seq/time/direction/content, with retention and eviction reporting.
@@ -110,7 +110,7 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `read` | Read bytes since the cursor (optional wait / match / min bytes) |
 | `transact` | Write then wait for a response in one step (AT/Modbus friendly) |
 | `receive` | Capture a window until match / max bytes / idle / budget |
-| `dump_to_file` | Stream RX to a file (live capture; no large payloads through MCP) |
+| `dump_to_file` | Export a slice of the host cache by seq, time, or offset |
 | `set_dtr_rts` | Set DTR/RTS, optionally pulse (reset/bootloader) |
 | `send_break` | Send a BREAK for a given duration |
 | `profile_list/save/delete` | Reusable named connection profiles |
@@ -126,7 +126,7 @@ open({ remote: "lab-x86", port_id: "ttyACM0", baud_rate: 921600 })
 open({ port: "/dev/ttyUSB0", baud_rate: 115200, newline: "crlf" })
 transact({ connection_id: "...", data: "AT", match: "OK" })
 receive({ connection_id: "...", start: "flush", reset: "dtr", budget_ms: 15000 })
-dump_to_file({ connection_id: "...", budget_ms: 30000 })
+dump_to_file({ connection_id: "...", time_from: 1760000000000 })
 close({ connection_id: "..." })
 ```
 

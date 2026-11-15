@@ -101,7 +101,7 @@ serial-hub_open(
 ```
 
 `port_id` 也接受完整路径 `/dev/ttyACM0`。后续 `read/receive/write/transact/
-dump_to_file/log_query/log_stats/log_export` 等工具全部可用。
+dump_to_file/log_query/log_stats` 等工具全部可用。`dump_to_file` 导出已有缓存，不边录边等。
 
 ## 6. 相比 ESP32 桥的增强
 

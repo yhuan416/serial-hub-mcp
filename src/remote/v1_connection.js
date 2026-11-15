@@ -567,6 +567,8 @@ export class CaptureCache {
     let list = this.entries.filter((e) => !dir || e.dir === dir);
     if (Number.isFinite(opts.seq_from)) list = list.filter((e) => e.seq >= opts.seq_from);
     if (Number.isFinite(opts.seq_to)) list = list.filter((e) => e.seq <= opts.seq_to);
+    if (Number.isFinite(opts.time_from)) list = list.filter((e) => e.ts >= opts.time_from);
+    if (Number.isFinite(opts.time_to)) list = list.filter((e) => e.ts <= opts.time_to);
     const file =
       opts.path ||
       path.join(
@@ -1289,69 +1291,42 @@ export class V1Connection {
   }
 
   async dumpToFile(opts = {}) {
-    const file =
-      opts.file ||
-      opts.path ||
-      path.join(
-        opts.dir ||
-          process.env.SERIAL_HUB_MCP_DUMPS_DIR ||
-          path.join(
-            process.env.XDG_CACHE_HOME || path.join(requireHome(), ".cache"),
-            "serial-hub-mcp",
-            "dumps",
-          ),
-        `dump-${Date.now()}.log`,
-      );
-    const t0 = now();
-    const budgetMs = opts.budgetMs ?? 5000;
-    const idleMs = opts.idleTimeoutMs ?? 0;
-    const deadline = t0 + budgetMs;
-    const maxBytes = opts.maxBytes || Infinity;
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const fd = fs.openSync(file, "w");
-    let cursor = this.rxCursor;
-    let bytes = 0;
-    let lines = 0;
-    let stopped = "budget";
-    let idleDeadline = null;
-    for (;;) {
-      const slice = this.cache.readBytes(cursor, Math.min(READ_CHUNK, maxBytes - bytes));
-      if (slice.data.length) {
-        fs.writeSync(fd, slice.data);
-        bytes += slice.data.length;
-        lines += slice.data.toString("utf8").split("\n").length - 1;
-        cursor = slice.next;
-        if (bytes >= maxBytes) {
-          stopped = "max_bytes";
-          break;
-        }
-        if (idleMs > 0 && idleDeadline == null) idleDeadline = now() + idleMs;
-        continue;
-      }
-      const t = now();
-      if (idleMs > 0 && idleDeadline != null && t >= idleDeadline) {
-        stopped = "idle";
-        break;
-      }
-      if (t >= deadline) {
-        stopped = "budget";
-        break;
-      }
-      await this.cache.watchData(Math.max(0, Math.min(deadline, idleDeadline ?? deadline) - t));
+    const file = opts.file || opts.path;
+    const useOffset = Number.isFinite(opts.offset_from) || Number.isFinite(opts.offset_to);
+    if (useOffset) {
+      const from = Number.isFinite(opts.offset_from) ? opts.offset_from : this.cache.ring.startOffset;
+      const end = Number.isFinite(opts.offset_to) ? opts.offset_to : this.cache.ring.endOffset;
+      const slice = this.cache.readBytes(from, Math.max(0, end - from));
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, slice.data);
+      return {
+        connection_id: this.id,
+        source: "host-cache",
+        index: "offset",
+        bytes: slice.data.length,
+        lines: slice.data.toString("utf8").split("\n").length - (slice.data.length ? 1 : 0),
+        offset_from: slice.from,
+        offset_to: slice.next,
+        preview: slice.data.subarray(Math.max(0, slice.data.length - 1536)).toString("utf8"),
+      };
     }
-    fs.closeSync(fd);
-    this.rxCursor = cursor;
+    const exported = this.cache.export({
+      path: file,
+      dir: opts.dir,
+      seq_from: opts.seq_from,
+      seq_to: opts.seq_to,
+      time_from: opts.time_from,
+      time_to: opts.time_to,
+    });
+    const preview = fs.existsSync(file)
+      ? fs.readFileSync(file).subarray(-1536).toString("utf8")
+      : "";
     return {
-      connection_id: this.id,
-      file,
-      bytes,
-      lines,
-      start_offset: cursor - bytes,
-      end_offset: cursor,
-      matched: false,
-      timed_out: stopped === "idle" || stopped === "budget",
-      stopped_reason: stopped,
-      total_time_ms: now() - t0,
+      ...exported,
+      file: undefined,
+      source: "host-cache",
+      index: "seq",
+      preview,
     };
   }
 

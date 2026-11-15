@@ -715,44 +715,33 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "dump_to_file",
-    title: "RX 直落盘（大流量抓取）",
+    title: "导出已缓存的一段",
     description:
-      "把 Rx（可选先清缓冲）边收边写入 hub 缓存，返回 file_id / sha256 / download_path 与结尾预览。" +
-      "大文件不进 MCP 正文。download_path 相对 hub HTTP 源（与 /mcp 同机同端口），用相同 Bearer GET 下载到 agent 本机。" +
-      "path/dir 忽略：hub 写不到 agent 磁盘，也不再返回容器绝对路径。" +
-      "结束条件：match > max_bytes > idle_timeout_ms（仅 >0 时）> budget_ms。idle 默认 0，不因静默提前停。" +
-      "下载：GET http://<hub>:8788/dumps/<file_id>，Bearer 与 /mcp 相同。",
+      "把 host 已有缓存导出成文件，立刻返回 file_id / sha256 / download_path。不读新数据，不移动 read 游标。" +
+      "默认按行索引（seq/时间）。二进制没有换行时传 offset_from/offset_to 导出原始字节。" +
+      "接着看新数据用 read 或 receive。下载：GET http://<hub>:8788/dumps/<file_id>，Bearer 与 /mcp 相同。",
     inputSchema: z.object({
       connection_id: connId,
-      path: z.string().optional().describe("忽略。服务端自管 file_id，不写 agent 本机路径"),
-      dir: z.string().optional().describe("忽略。文件只落 hub 缓存目录"),
-      flush: z.boolean().optional().describe("先清旧缓冲再开始，默认 false"),
-      match: z.string().optional().describe("出现即停的匹配串（字节级）"),
-      match_encoding: z
-        .enum(["utf8", "hex", "base64"])
-        .optional()
-        .describe("match 的编码，默认 utf8"),
-      idle_timeout_ms: z
-        .number()
-        .int()
-        .min(0)
-        .optional()
-        .describe("静默即停阈值（毫秒）。默认 0=不因静默提前停；仅显式传入且 >0 才生效"),
-      budget_ms: z.number().int().positive().optional().describe("采集预算（毫秒），默认 5000"),
-      max_bytes: z.number().int().positive().optional().describe("落盘字节上限"),
+      dir: z.enum(["rx", "tx"]).optional().describe("行方向，默认两边"),
+      seq_from: z.number().int().optional().describe("起始 seq（含）"),
+      seq_to: z.number().int().optional().describe("结束 seq（含）"),
+      time_from: z.number().int().optional().describe("起始时间，epoch ms（含）"),
+      time_to: z.number().int().optional().describe("结束时间，epoch ms（含）"),
+      offset_from: z.number().int().optional().describe("原始字节起始偏移。给出后按字节环导出，不用 seq"),
+      offset_to: z.number().int().optional().describe("原始字节结束偏移，不含"),
     }),
     handler: async (args) => {
       const conn = must(manager, args.connection_id);
-      const match = args.match ? toBuffer(args.match, args.match_encoding || "utf8") : undefined;
       const allocated = allocDumpFile("dump");
       const raw = await conn.dumpToFile({
         file: allocated.file,
-        path: allocated.file,
-        flush: args.flush ?? false,
-        match,
-        idleTimeoutMs: args.idle_timeout_ms ?? 0,
-        budgetMs: args.budget_ms ?? 5000,
-        maxBytes: args.max_bytes,
+        dir: args.dir,
+        seq_from: args.seq_from,
+        seq_to: args.seq_to,
+        time_from: args.time_from,
+        time_to: args.time_to,
+        offset_from: args.offset_from,
+        offset_to: args.offset_to,
       });
       return { ok: true, response: publishDump(raw, allocated.file_id, allocated.file) };
     },

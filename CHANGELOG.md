@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- `dump_to_file` 改为导出已有 host 缓存。按 seq、时间或 offset，立刻返回，不移动 read 游标。接着看新数据用 `read` 或 `receive`。
+
 ## 0.1.8 — 2026-11-16
 
 - 去掉 `cache_set`、`log_export`、`log_sync`、`event_query` 工具。查日志用 `log_query`，留档用 `dump_to_file`。改 hub 缓存走启动参数或 v1 `cache_set` 控制帧。

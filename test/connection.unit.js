@@ -202,25 +202,13 @@ test("receive start=flush 清旧缓冲 + cursor 覆盖 diff", async () => {
   assert.ok(!r.text.includes("OLD"), `text=${r.text}`);
 });
 
-test("dump_to_file 直落盘 + 结尾预览", async () => {
+test("dump_to_file 导出已有字节，不推进游标", async () => {
   const conn = new Connection(null, fakePort(), { rx_buffer_size: 1000 });
-  setTimeout(() => conn._onData(Buffer.from("AAA\n")), 10);
-  setTimeout(() => conn._onData(Buffer.from("BBB\n")), 40);
+  conn._onData(Buffer.from("AAA\nBBB\n"));
   const file = `${os.tmpdir()}/dump-test-${Date.now()}-${Math.random().toString(36).slice(2)}.log`;
-  const r = await conn.dumpToFile({ file, idleTimeoutMs: 100, budgetMs: 800 });
-  assert.equal(r.stopped_reason, "idle");
-  assert.ok(r.bytes >= 8, `bytes=${r.bytes}`);
-  assert.equal(fs.readFileSync(file, "utf8"), "AAA\nBBB\n");
-  assert.ok(r.preview.includes("BBB"));
-  fs.rmSync(file, { force: true });
-});
-
-test("dump_to_file 默认不因静默提前停", async () => {
-  const conn = new Connection(null, fakePort(), { rx_buffer_size: 1000 });
-  setTimeout(() => conn._onData(Buffer.from("X\n")), 20);
-  const file = `${os.tmpdir()}/dump-budget-${Date.now()}-${Math.random().toString(36).slice(2)}.log`;
-  const r = await conn.dumpToFile({ file, budgetMs: 250 });
-  assert.equal(r.stopped_reason, "budget");
-  assert.ok(r.total_time_ms >= 200, `time=${r.total_time_ms}`);
+  const r = await conn.dumpToFile({ file, offset_from: 4, offset_to: 8 });
+  assert.equal(r.index, "offset");
+  assert.equal(fs.readFileSync(file, "utf8"), "BBB\n");
+  assert.equal(conn.handled, 0);
   fs.rmSync(file, { force: true });
 });

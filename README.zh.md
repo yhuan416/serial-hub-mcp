@@ -59,7 +59,8 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http --host 0.0.0.0 --port 878
 | `list_ports` | 本机端口，并汇总 `remotes.json` 里每个远端 |
 | `open` / `close` | 打开、关闭。远端用 `remote` 或 `endpoint`+`token`。第二路要写传 `claim_writer:true` |
 | `read` / `write` / `transact` | 读、写、写完等回包 |
-| `receive` / `dump_to_file` | 观察一段时间，或直接落盘 |
+| `receive` | 观察一段时间 |
+| `dump_to_file` | 按 seq、时间或 offset 导出已有缓存，不读新数据 |
 | `set_dtr_rts` / `send_break` | 控制线与 BREAK |
 | `get_status` | 连接状态、计数、是否在重连 |
 | `open_list` | 查这个口开过什么波特率、叫什么名字 |

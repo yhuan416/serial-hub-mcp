@@ -496,127 +496,61 @@ class Connection {
   }
 
   /**
-   * 大流量/长日志直落盘：RX 字节边收边写文件，返回文件路径与结尾预览，
-   * 避免经 MCP 往返搬运大字节。结束条件：match(字节) > max_bytes > 静默 idleTimeoutMs > budgetMs。
+   * 把已在 host 缓存里的一段导出到文件。不读新数据，不推进 handled。
+   * 有 seq/time 时导出行索引；有 offset 或没有行时导出原始字节。
    */
   async dumpToFile({
     file,
-    flush = false,
-    match,
-    idleTimeoutMs = 0,
-    budgetMs = 5000,
-    maxBytes,
+    dir,
+    seq_from,
+    seq_to,
+    time_from,
+    time_to,
+    offset_from,
+    offset_to,
   } = {}) {
-    const t0 = Date.now();
-    const deadline = t0 + budgetMs;
-    if (flush) await this.flushInput();
-
-    let base = this.handled;
-    let collected = 0;
-    let stopReason = "budget";
-    try {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-    } catch (_) {}
-    const stream = fs.createWriteStream(file);
-    let writeErr = null;
-    const writeBuf = (buf) =>
-      new Promise((res) => {
-        if (!buf || buf.length === 0) return res();
-        stream.write(buf, (e) => {
-          if (e) writeErr = e;
-          res();
-        });
+    const useOffset = Number.isFinite(offset_from) || Number.isFinite(offset_to);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (!useOffset && this.logStore && typeof this.logStore.query === "function") {
+      const q = await this.logStore.query({
+        connection_id: this.id,
+        dir,
+        seq_from,
+        seq_to,
+        time_from,
+        time_to,
+        limit: 1_000_000,
+        order: "asc",
       });
-    const consumeTo = async (end) => {
-      const d = this._sliceRange(base, end);
-      this.handled = end;
-      base = end;
-      if (d.length) {
-        await writeBuf(d);
-        collected += d.length;
+      const parts = [];
+      for (const e of q.entries || []) {
+        parts.push(e.hex ? Buffer.from(e.hex, "hex") : Buffer.from(e.line || "", "utf8"));
       }
-    };
-
-    try {
-      for (;;) {
-        if (writeErr) {
-          stopReason = "error";
-          break;
-        }
-        if (this._pumpError) {
-          stopReason = "error";
-          break;
-        }
-        if (this.closed) {
-          stopReason = "closed";
-          break;
-        }
-        if (Date.now() >= deadline) {
-          stopReason = "budget";
-          break;
-        }
-        const avail = this._length - base;
-        if (avail > 0) {
-          if (match && match.length > 0) {
-            const idx = this._indexOf(match, base);
-            if (idx >= 0) {
-              await consumeTo(idx + match.length);
-              stopReason = "match";
-              break;
-            }
-          }
-          await consumeTo(this._length);
-          if (maxBytes && collected >= maxBytes) {
-            stopReason = "max_bytes";
-            break;
-          }
-          continue;
-        }
-        const remain = deadline - Date.now();
-        if (remain <= 0) {
-          stopReason = "budget";
-          break;
-        }
-        const waitMs = idleTimeoutMs > 0 ? Math.min(idleTimeoutMs, remain) : remain;
-        const r = await this.collect(this._length, { minBytes: 1, waitMs });
-        if (!r.timedOut) continue;
-        stopReason = idleTimeoutMs > 0 && Date.now() < deadline ? "idle" : "budget";
-        break;
-      }
-    } finally {
-      await new Promise((res) => stream.end(res));
+      const data = Buffer.concat(parts);
+      fs.writeFileSync(file, data);
+      return {
+        connection_id: this.id,
+        source: "host-cache",
+        index: "seq",
+        bytes: data.length,
+        lines: (q.entries || []).length,
+        first_seq: (q.entries || [])[0]?.seq ?? null,
+        last_seq: (q.entries || []).at(-1)?.seq ?? null,
+        preview: data.subarray(Math.max(0, data.length - 1536)).toString("utf8"),
+      };
     }
-
-    // 结尾预览：≤2048B 全量；更大则前 512B + 尾 1536B
-    let preview = "";
-    let fileBytes = 0;
-    try {
-      fileBytes = fs.statSync(file).size;
-      const fd = fs.openSync(file, "r");
-      if (fileBytes <= 2048) {
-        const all = Buffer.alloc(fileBytes);
-        if (fileBytes) fs.readSync(fd, all, 0, fileBytes, 0);
-        preview = all.toString("utf8");
-      } else {
-        const headLen = 512;
-        const tailLen = 1536;
-        const head = Buffer.alloc(headLen);
-        const tail = Buffer.alloc(tailLen);
-        fs.readSync(fd, head, 0, headLen, 0);
-        fs.readSync(fd, tail, 0, tailLen, fileBytes - tailLen);
-        preview = `${head.toString("utf8")}\n…(中间省略)…\n${tail.toString("utf8")}`;
-      }
-      fs.closeSync(fd);
-    } catch (_) {}
-
+    const from = Number.isFinite(offset_from) ? offset_from : 0;
+    const to = Number.isFinite(offset_to) ? offset_to : this._length;
+    const data = this._sliceRange(from, to);
+    fs.writeFileSync(file, data);
     return {
-      path: file,
-      bytes: fileBytes,
-      matched: stopReason === "match",
-      timed_out: stopReason === "idle" || stopReason === "budget" || stopReason === "closed",
-      stopped_reason: stopReason,
-      total_time_ms: Date.now() - t0,
-      preview,
+      connection_id: this.id,
+      source: "host-cache",
+      index: "offset",
+      bytes: data.length,
+      offset_from: from,
+      offset_to: from + data.length,
+      preview: data.subarray(Math.max(0, data.length - 1536)).toString("utf8"),
     };
   }
 
