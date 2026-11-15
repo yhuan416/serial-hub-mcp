@@ -21,7 +21,7 @@
 
 services:
   serial-hub-mcp:
-    image: harborcn.fujikam.com:14743/ipcs/serial-hub-mcp:0.1.5
+    image: serial-hub-mcp
     container_name: serial-hub-mcp
     restart: unless-stopped
     ports:
@@ -34,7 +34,7 @@ services:
 
   serial-hub-server:
     profiles: ["local"]
-    image: harborcn.fujikam.com:14743/ipcs/serial-hub-server:0.1.5
+    image: serial-hub-server
     container_name: serial-hub-server
     restart: unless-stopped
     ports:

@@ -214,3 +214,13 @@ test("dump_to_file 直落盘 + 结尾预览", async () => {
   assert.ok(r.preview.includes("BBB"));
   fs.rmSync(file, { force: true });
 });
+
+test("dump_to_file 默认不因静默提前停", async () => {
+  const conn = new Connection(null, fakePort(), { rx_buffer_size: 1000 });
+  setTimeout(() => conn._onData(Buffer.from("X\n")), 20);
+  const file = `${os.tmpdir()}/dump-budget-${Date.now()}-${Math.random().toString(36).slice(2)}.log`;
+  const r = await conn.dumpToFile({ file, budgetMs: 250 });
+  assert.equal(r.stopped_reason, "budget");
+  assert.ok(r.total_time_ms >= 200, `time=${r.total_time_ms}`);
+  fs.rmSync(file, { force: true });
+});

@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- 请求了 `claim_writer` 但远端未授予写权时，`open` 失败，不再静默变成只读。已有 writer 时先订阅抢占，再改串口参数。profile 可保存 `claim_writer`。
+- 读到缺口时返回 `gap_from_offset` / `gap_to_offset`，`gap_bytes` 为跳过的字节数。`mode=gap` 时 `open.gaps` 带上请求游标到续传点的范围，下一次 `read` 也会报这个缺口。capture 过期重开时 `resume_lost` 留下旧游标。
+- profiles 在容器里改写到 `/data/profiles`。`/config` 只读，`profile_save` 不再 EROFS。
+- `dump_to_file` 的 `idle_timeout_ms` 默认改为 0，不再因 300ms 静默提前结束。显式传入且 >0 才按静默停。
+- `open(transport=remote)` 报错改为要求 `endpoint + port_id`，并给出 `uart1` 示例。
+- v1 默认租约 30s 改为 120s。hub-server 的 ping 会续租，长 dump 不再 `session not found`。
+- `list_ports(endpoint=...)` 命中 remotes.json 时回配置名，不再标成 `custom`。
+- `dump_to_file` / `log_export` 只把文件留在 hub 缓存，返回 `file_id` / `sha256` / `download_path`，不再返回容器绝对路径。`GET /dumps/<file_id>` 用与 `/mcp` 相同的 Bearer 下载到 agent 机器。
 - 日志工具与现行契约对齐：`log_query` / `log_export` / `log_sync` 只动 host 缓存，不再向设备要历史。`event_query` 返回 `supported:false`。
 - 契约去掉 HELLO `proto` 和 x86 `history:"ring"`。`open` 可传 `claim_writer` 抢写权。
 

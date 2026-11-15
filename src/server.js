@@ -24,6 +24,7 @@ import { LogStore } from "./log_store.js";
 import { LogRouter } from "./log_router.js";
 import { keyedSerialQueue } from "./keyed_queue.js";
 import { buildTools } from "./tools/index.js";
+import { resolveDump } from "./dump_catalog.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -90,10 +91,11 @@ if (httpMode) {
     info: buildServiceInfo({
       service: SERVICE,
       version: pkg.version,
-      endpoints: { mcp: path, health: healthPath, info: infoPath },
+      endpoints: { mcp: path, health: healthPath, info: infoPath, dumps: "/dumps/{file_id}" },
       changelogPath: CHANGELOG_PATH,
       extra: { tools_count: tools.length },
     }),
+    resolveDump,
     onShutdown: async () => {
       await manager.closeAll();
     },

@@ -135,14 +135,14 @@ sudo cp docker/remotes.json.example /var/lib/serial-hub-mcp/config/remotes.json
 docker compose -f docker/docker-compose.mcp.yml --profile local up -d
 ```
 
-镜像：`harborcn.fujikam.com:14743/ipcs/serial-hub-mcp:0.1.5`。`LOCAL_HUB_TOKEN` 必须和本机 hub 的 `SERIAL_HUB_SERVER_TOKEN` 相同。agent 连 `http://<host>:8787/mcp`，带 `Authorization: Bearer <SERIAL_HUB_MCP_HTTP_TOKEN>`。多个 agent 共用这一份连接和日志。删容器不会丢 `/var/lib` 里的配置和缓存；正在开着的会话会断，重开后从游标续上。
+镜像名用 `serial-hub-mcp` 和 `serial-hub-server`，不写仓库地址。`LOCAL_HUB_TOKEN` 必须和本机 hub 的 `SERIAL_HUB_SERVER_TOKEN` 相同。agent 连 `http://<host>:8787/mcp`，带 `Authorization: Bearer <SERIAL_HUB_MCP_HTTP_TOKEN>`。多个 agent 共用这一份连接和日志。删容器不会丢 `/var/lib` 里的配置和缓存；正在开着的会话会断，重开后从游标续上。
 
 本机 hub 不要在部署文件里写死 `/dev/ttyACM0` 这种节点。hub 每 2 秒扫一次端口，但容器看得见不等于打得开：
 
 - 绑定宿主机 `/dev`，新节点才会出现在容器里。只读挂 `/run/udev`，`SerialPort.list()` 才能拿到串口信息。
 - 用设备号放行，不要按路径枚举：`c 166:* rmw` 是 ttyACM，`c 188:* rmw` 是 ttyUSB。不要放行 `c 4:*`（控制台和 ttyS）。
 - 进程要在 `dialout`（本机 gid 20）里。不要为了串口把容器设成 privileged。
-- 扫描只加不减。拔掉的端口会留在列表里，打开时失败；已打开的会话拔出后要关掉再开。
+- 扫描会加入新口。设备节点消失后从列表去掉，正在打开的口会被关掉。
 
 本机 hub 按上面这套跑：绑定 `/dev`，放行 `c 166:*` 和 `c 188:*`，不再逐个 `--device`。没有 sudo 时，配置和数据可以放在 `~/.config/serial-hub-mcp` 与 `~/.local/share/serial-hub-server`，不必强行用 `/var/lib`。MCP 容器通过 Docker 网络访问 `tcp://serial-hub-server:7000`，不要写成容器里的 localhost。
 

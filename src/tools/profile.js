@@ -19,6 +19,7 @@ const ALLOWED = [
   "prompt",
   "regex",
   "note",
+  "claim_writer",
 ];
 
 export function profileTools() {
@@ -59,6 +60,7 @@ export function profileTools() {
           .describe("shell 提示符正则，receive(prompt:true) 用它作结束条件"),
         regex: z.string().optional().describe("默认结束正则"),
         note: z.string().optional().describe("备注"),
+        claim_writer: z.boolean().optional().describe("打开时抢占写权"),
       }),
       handler: async (args) => {
         const { name, ...cfg } = args;

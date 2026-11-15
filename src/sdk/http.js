@@ -6,6 +6,7 @@
 // 鉴权：可选 Bearer token（SERIAL_HUB_MCP_HTTP_TOKEN）。/health 与 /info 免鉴权、不含密钥。
 
 import http from "node:http";
+import fs from "node:fs";
 import crypto from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -79,6 +80,8 @@ function safeEqual(a, b) {
  * @param {number} [opts.bodyLimit]
  * @param {string[]} [opts.allowedHosts]
  * @param {string[]} [opts.allowedOrigins]
+ * @param {string} [opts.dumpsPath="/dumps/"]
+ * @param {(fileId: string) => string|null} [opts.resolveDump]
  */
 export function createHttpServer(opts = {}) {
   const {
@@ -92,6 +95,8 @@ export function createHttpServer(opts = {}) {
     bodyLimit = DEFAULT_BODY_LIMIT,
     allowedHosts,
     allowedOrigins,
+    dumpsPath = "/dumps/",
+    resolveDump,
   } = opts;
 
   if (typeof createServer !== "function") {
@@ -122,6 +127,27 @@ export function createHttpServer(opts = {}) {
           return res.end(val);
         }
         return json(res, 200, val);
+      }
+      if (req.method === "GET" && dumpsPath && url.pathname.startsWith(dumpsPath)) {
+        if (authorized && !authorized(req)) return rpcError(res, 401, -32001, "Unauthorized");
+        const raw = url.pathname.slice(dumpsPath.length);
+        if (!raw || raw.includes("/")) return rpcError(res, 404, -32602, "dump not found");
+        let fileId;
+        try {
+          fileId = decodeURIComponent(raw);
+        } catch {
+          return rpcError(res, 404, -32602, "dump not found");
+        }
+        const file = typeof resolveDump === "function" ? resolveDump(fileId) : null;
+        if (!file) return rpcError(res, 404, -32602, "dump not found");
+        const stat = fs.statSync(file);
+        res.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-length": stat.size,
+          "content-disposition": `attachment; filename="${fileId}"`,
+        });
+        fs.createReadStream(file).pipe(res);
+        return;
       }
       if (url.pathname !== path) return rpcError(res, 404, -32601, `not found: ${url.pathname}`);
       if (authorized && !authorized(req)) return rpcError(res, 401, -32001, "Unauthorized");

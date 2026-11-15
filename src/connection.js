@@ -503,7 +503,7 @@ class Connection {
     file,
     flush = false,
     match,
-    idleTimeoutMs = 300,
+    idleTimeoutMs = 0,
     budgetMs = 5000,
     maxBytes,
   } = {}) {
@@ -573,14 +573,14 @@ class Connection {
           continue;
         }
         const remain = deadline - Date.now();
-        const waitMs = Math.max(0, Math.min(idleTimeoutMs, remain));
-        if (waitMs <= 0) {
+        if (remain <= 0) {
           stopReason = "budget";
           break;
         }
+        const waitMs = idleTimeoutMs > 0 ? Math.min(idleTimeoutMs, remain) : remain;
         const r = await this.collect(this._length, { minBytes: 1, waitMs });
         if (!r.timedOut) continue;
-        stopReason = "idle";
+        stopReason = idleTimeoutMs > 0 && Date.now() < deadline ? "idle" : "budget";
         break;
       }
     } finally {

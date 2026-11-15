@@ -4,7 +4,7 @@ import os from "node:os";
 
 // 连接 profile 持久化：常用端口/端点参数按名字存 JSON，供 open({profile:"name"}) 一条复用。
 // 明文（不含凭据），目录可用环境变量覆盖。
-// 默认：$XDG_CONFIG_HOME/serial-hub-mcp/profiles.json（缺省 ~/.config/serial-hub-mcp/profiles.json）。
+// 默认：$XDG_CONFIG_HOME/serial-hub-mcp/profiles.json。容器里用 SERIAL_HUB_MCP_PROFILES_DIR=/data/profiles（/config 只读）。
 
 function defaultProfilesDir() {
   if (process.env.SERIAL_HUB_MCP_PROFILES_DIR) return process.env.SERIAL_HUB_MCP_PROFILES_DIR;

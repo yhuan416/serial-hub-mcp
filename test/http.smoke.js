@@ -10,6 +10,10 @@ import { LogStore } from "../src/log_store.js";
 import { LogRouter } from "../src/log_router.js";
 import { keyedSerialQueue } from "../src/keyed_queue.js";
 import { buildTools } from "../src/tools/index.js";
+import { allocDumpFile, resolveDump } from "../src/dump_catalog.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 function makeHub() {
   const store = new LogStore({ dir: null });
@@ -90,3 +94,46 @@ test(
     }
   },
 );
+
+test("HTTP: GET /dumps/<file_id> 鉴权下载，拒绝穿越", { timeout: 20000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dump-http-"));
+  const prev = process.env.SERIAL_HUB_MCP_DUMPS_DIR;
+  process.env.SERIAL_HUB_MCP_DUMPS_DIR = dir;
+  const hub = makeHub();
+  const token = "dump-token";
+  const server = createHttpServer({
+    createServer: hub.createServer,
+    path: "/mcp",
+    token,
+    resolveDump,
+  });
+  const port = await listen(server);
+  const { file_id, file } = allocDumpFile("dump");
+  fs.writeFileSync(file, "wifi-dsp\n");
+  try {
+    const denied = await fetch(`http://127.0.0.1:${port}/dumps/${file_id}`);
+    assert.equal(denied.status, 401);
+
+    const ok = await fetch(`http://127.0.0.1:${port}/dumps/${file_id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(await ok.text(), "wifi-dsp\n");
+
+    const traversal = await fetch(`http://127.0.0.1:${port}/dumps/..%2Fetc%2Fpasswd`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(traversal.status, 404);
+
+    const missing = await fetch(`http://127.0.0.1:${port}/dumps/missing.log`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(missing.status, 404);
+  } finally {
+    await closeServer(server);
+    await hub.manager.closeAll();
+    if (prev === undefined) delete process.env.SERIAL_HUB_MCP_DUMPS_DIR;
+    else process.env.SERIAL_HUB_MCP_DUMPS_DIR = prev;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

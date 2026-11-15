@@ -539,6 +539,8 @@ export class V1Connection {
   }
 
   async _opPing(msg) {
+    const now = Date.now();
+    for (const s of this.sessions.values()) s.lastActivity = now;
     this.sendControl({
       id: msg.id,
       ok: true,

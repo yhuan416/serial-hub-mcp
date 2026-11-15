@@ -653,7 +653,7 @@ export class V1Connection {
     this.captureId = null;
     this.writer = false;
     this.windowBytes = 0;
-    this.leaseMs = opts.leaseMs || 30000;
+    this.leaseMs = opts.leaseMs || 120000;
     this.ackInterval = opts.ackInterval || 32768;
     this.pending = new Map();
     this.nextId = 1;
@@ -677,6 +677,7 @@ export class V1Connection {
     this.pingTimer = null;
     this.info = null;
     this.mode = null;
+    this.resumeLost = null;
     this.stateFile = opts.stateFile || defaultStateFile();
     this.resume = config.v1_resume !== false;
     this.lastPersist = 0;
@@ -773,14 +774,21 @@ export class V1Connection {
       if (!first) throw new Error("远端没有可用端口");
       this.port = first.id;
     }
-    await this._control("config", {
+    const configParams = {
       port: this.port,
       baud_rate: this.config.baud_rate,
       data_bits: this.config.data_bits,
       stop_bits: this.config.stop_bits,
       parity: this.config.parity,
       flow_control: this.config.flow_control,
-    });
+    };
+    let configAfterSubscribe = false;
+    try {
+      await this._control("config", configParams);
+    } catch (err) {
+      if (err.code !== "not_controller") throw err;
+      configAfterSubscribe = true;
+    }
     const subscribeParams = {
       port: this.port,
       mode: this.config.v1_mode || "replay+live",
@@ -803,6 +811,7 @@ export class V1Connection {
       };
     }
     let sub;
+    let abandoned = null;
     try {
       sub = await this._control("subscribe", subscribeParams);
     } catch (err) {
@@ -810,6 +819,12 @@ export class V1Connection {
         subscribeParams.from &&
         (err.code === "capture_expired" || err.code === "capture_not_found")
       ) {
+        abandoned = {
+          capture_id: subscribeParams.from.capture_id,
+          offset: subscribeParams.from.offset,
+          seq: subscribeParams.from.seq,
+          reason: err.code,
+        };
         delete subscribeParams.from;
         sub = await this._control("subscribe", subscribeParams);
       } else {
@@ -822,6 +837,14 @@ export class V1Connection {
     this.slot = sub.port_slot;
     this.captureId = sub.capture_id;
     this.writer = Boolean(sub.writer);
+    if (this.config.claim_writer === true && !this.writer) {
+      throw Object.assign(new Error("claim_writer 未生效，远端未授予写权"), {
+        code: "not_controller",
+      });
+    }
+    if (configAfterSubscribe && this.writer) {
+      await this._control("config", { ...configParams, session_id: this.sessionId });
+    }
     this.windowBytes = sub.window_bytes;
     const startOffset = sub.start?.offset || 0;
     const startSeq = sub.start?.seq || 0;
@@ -839,6 +862,19 @@ export class V1Connection {
     } else if (this.cache.newestOffset < startOffset) {
       this.cache.markGap(startOffset);
     }
+    const requested = subscribeParams.from ? Number(subscribeParams.from.offset) : null;
+    if (sub.mode === "gap" && requested != null && startOffset > requested) {
+      const known = this.cache.gaps.some((g) => g.from === requested && g.to === startOffset);
+      if (!known) {
+        this.cache.gaps.push({
+          from: requested,
+          to: startOffset,
+          bytes: startOffset - requested,
+        });
+      }
+      if (this.rxCursor >= startOffset) this.rxCursor = requested;
+    }
+    this.resumeLost = abandoned;
     this.startedAt = now();
     this.lastAck = this.cache.newestOffset;
     this._persistCursor(true);
@@ -1100,7 +1136,9 @@ export class V1Connection {
       } catch (_) {
         msg = { code: "error" };
       }
-      this.lastError = msg.message || msg.code || "error";
+      this.lastError = msg.code
+        ? `${msg.code}${msg.message ? `: ${msg.message}` : ""}`
+        : msg.message || "error";
       if (this.helloWait) {
         const w = this.helloWait;
         this.helloWait = null;
@@ -1131,7 +1169,7 @@ export class V1Connection {
             const end = abs + match.length;
             const sub = this.cache.readBytes(slice.from, end - slice.from);
             this.rxCursor = sub.next;
-            return this._readResult(slice.from, sub, "match", true);
+            return this._readResult(from, sub, "match", true);
           }
         }
         got += slice.data.length;
@@ -1140,7 +1178,7 @@ export class V1Connection {
           const all = this.cache.readBytes(from, cursor - from);
           this.rxCursor = all.next;
           return this._readResult(
-            all.from,
+            from,
             all,
             all.next - all.from >= maxBytes ? "max_bytes" : "min_bytes",
           );
@@ -1153,25 +1191,29 @@ export class V1Connection {
       if (idleHit || t >= deadline) {
         const all = this.cache.readBytes(from, cursor - from);
         this.rxCursor = all.next;
-        return this._readResult(all.from, all, idleHit ? "idle" : "budget");
+        return this._readResult(from, all, idleHit ? "idle" : "budget");
       }
       const waitUntil = Math.min(deadline, idleDeadline ?? deadline, t + 1000);
       await this.cache.watchData(Math.max(0, waitUntil - t));
     }
   }
 
-  _readResult(from, slice, reason, matched = false) {
+  _readResult(requested, slice, reason, matched = false) {
+    const skipped = Math.max(0, slice.ringStart - requested);
+    const gap = Boolean(slice.gap) || skipped > 0;
     return {
       connection_id: this.id,
       data: slice.data,
-      start_offset: from,
+      start_offset: slice.from,
       end_offset: slice.next,
       next_offset: slice.next,
       matched,
       timed_out: reason === "idle" || reason === "budget",
       stopped_reason: reason,
-      gap: slice.gap,
-      gap_bytes: slice.gap ? Math.max(0, from - slice.ringStart) : 0,
+      gap,
+      gap_bytes: gap ? skipped : 0,
+      gap_from_offset: gap ? requested : null,
+      gap_to_offset: gap ? slice.ringStart : null,
       ring_start_offset: slice.ringStart,
       ring_end_offset: slice.ringEnd,
       has_more: slice.ringEnd > slice.next,
@@ -1248,9 +1290,11 @@ export class V1Connection {
 
   async dumpToFile(opts = {}) {
     const file =
+      opts.file ||
       opts.path ||
       path.join(
         opts.dir ||
+          process.env.SERIAL_HUB_MCP_DUMPS_DIR ||
           path.join(
             process.env.XDG_CACHE_HOME || path.join(requireHome(), ".cache"),
             "serial-hub-mcp",
@@ -1260,7 +1304,7 @@ export class V1Connection {
       );
     const t0 = now();
     const budgetMs = opts.budgetMs ?? 5000;
-    const idleMs = opts.idleTimeoutMs ?? 300;
+    const idleMs = opts.idleTimeoutMs ?? 0;
     const deadline = t0 + budgetMs;
     const maxBytes = opts.maxBytes || Infinity;
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -1281,11 +1325,11 @@ export class V1Connection {
           stopped = "max_bytes";
           break;
         }
-        if (idleDeadline == null) idleDeadline = now() + idleMs;
+        if (idleMs > 0 && idleDeadline == null) idleDeadline = now() + idleMs;
         continue;
       }
       const t = now();
-      if (idleDeadline != null && t >= idleDeadline) {
+      if (idleMs > 0 && idleDeadline != null && t >= idleDeadline) {
         stopped = "idle";
         break;
       }
@@ -1396,11 +1440,13 @@ export class V1Connection {
       capture_id: this.captureId,
       session_id: this.sessionId,
       mode: this.mode,
+      resume_lost: this.resumeLost || null,
       reconnecting: this.reconnecting,
       reconnect_attempts: this.reconnectAttempts,
       reconnects: this.reconnects,
       last_reconnect_at: this.lastReconnectAt,
       writer: this.writer,
+      gaps: this.cache.gaps,
       bytes_in: this.bytesIn,
       bytes_out: this.bytesOut,
       rx_buffered: Math.max(0, this.cache.newestOffset - this.rxCursor),
@@ -1570,6 +1616,17 @@ export function probeRemote({ endpoint, token, timeoutMs = 5000 }) {
       buf = Buffer.concat([buf, chunk]);
       const { frames, error } = decodeFrames(buf);
       if (error) return fail(new Error("bad_frame"));
+      const errf = frames.find((f) => f.type === T.ERROR);
+      if (errf) {
+        let msg = {};
+        try {
+          msg = JSON.parse(errf.payload.toString("utf8"));
+        } catch (_) {}
+        const text = msg.code
+          ? `${msg.code}${msg.message ? `: ${msg.message}` : ""}`
+          : msg.message || "remote error";
+        return fail(new Error(text));
+      }
       const hello = frames.find((f) => f.type === T.HELLO_ACK);
       if (!hello) return;
       clearTimeout(timer);

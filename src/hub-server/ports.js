@@ -1,7 +1,7 @@
 // PortManager — x86 串口服务端的多端口管理。
 //
 // 每个端口共享一份状态（ring + 日志 + 串口句柄），多个客户端各自携带
-// from_offset 读取，互不影响。端口按需打开；支持热插拔（新端口自动出现）。
+// from_offset 读取，互不影响。端口按需打开。扫描会加入新口，并去掉节点已消失的口。
 
 import path from "node:path";
 import fs from "node:fs";
@@ -95,18 +95,20 @@ export class PortManager {
         this.lastScanError = err && err.message ? err.message : String(err);
         return this.list();
       }
+      const seen = new Set();
       for (const p of list || []) {
         if (!p || !p.path) continue;
         if (!this._matchFilter(p.path)) continue;
         // 容器里 /sys 是宿主机的，可能列出未映射进 /dev 的串口；以设备节点存在为准
-        if (realList) {
-          try {
-            fs.accessSync(p.path, fs.constants.F_OK);
-          } catch (_) {
-            continue;
-          }
-        }
-        this._ensurePort(p);
+        if (realList && !this._nodeExists(p.path)) continue;
+        const st = this._ensurePort(p);
+        st.missing = false;
+        seen.add(st.id);
+      }
+      for (const st of [...this.ports.values()]) {
+        if (seen.has(st.id)) continue;
+        if (realList && this._nodeExists(st.path)) continue;
+        this._dropMissing(st);
       }
       this.lastScanError = null;
       const sig = [...this.ports.keys()].sort().join(",");
@@ -143,6 +145,35 @@ export class PortManager {
     tick();
     this.scanTimer = setInterval(tick, Math.max(500, intervalMs));
     this.scanTimer.unref?.();
+  }
+
+  _nodeExists(portPath) {
+    try {
+      fs.accessSync(portPath, fs.constants.F_OK);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _dropMissing(st) {
+    st.missing = true;
+    if (st.serial) {
+      try {
+        st.serial.close?.();
+      } catch (_) {}
+      st.serial = null;
+      st.openPromise = null;
+      for (const fn of st.closeHandlers) {
+        try {
+          fn();
+        } catch (_) {}
+      }
+    }
+    try {
+      st.log?.store?.close();
+    } catch (_) {}
+    this.ports.delete(st.id);
   }
 
   _ensurePort(info) {

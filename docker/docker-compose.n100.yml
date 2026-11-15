@@ -5,7 +5,7 @@
 #   docker compose -f docker/docker-compose.n100.yml up -d
 services:
   serial-hub-server:
-    image: harborcn.fujikam.com:14743/ipcs/serial-hub-server:0.1.5
+    image: serial-hub-server
     container_name: serial-hub-server
     restart: unless-stopped
     ports:

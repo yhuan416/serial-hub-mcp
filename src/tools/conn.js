@@ -4,23 +4,14 @@
 // handler 统一返回 {ok:true,response}，失败 throw 由 mcp-kit 转 isError。
 import { z } from "zod";
 import { SerialPort } from "serialport";
-import path from "node:path";
-import os from "node:os";
 import { defineTool } from "../sdk/tool.js";
 import { toBuffer, appendNewline } from "../encoding.js";
 import * as profiles from "../profiles.js";
 import { probeRemote } from "../remote/v1_connection.js";
 import { loadRemotes, resolveRemote } from "../remotes.js";
+import { allocDumpFile, publishDump } from "../dump_catalog.js";
 
 export const connId = z.string().min(1).describe("连接 ID（由 open 返回）");
-
-/** 默认转储目录：$XDG_CACHE_HOME/serial-hub-mcp/dumps/（按天归档）。 */
-function defaultDumpPath() {
-  const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
-  const dir = process.env.SERIAL_HUB_MCP_DUMPS_DIR || path.join(base, "serial-hub-mcp", "dumps");
-  const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  return path.join(dir, `dump-${day}-${Date.now()}.log`);
-}
 
 const dataField = z
   .union([
@@ -95,6 +86,8 @@ function frameResult(r, includeHex) {
     stopped_reason: r.stopped_reason,
     gap: r.gap,
     gap_bytes: r.gap_bytes,
+    gap_from_offset: r.gap_from_offset ?? null,
+    gap_to_offset: r.gap_to_offset ?? null,
     ring_start_offset: r.ring_start_offset,
     ring_end_offset: r.ring_end_offset,
     has_more: r.has_more,
@@ -232,8 +225,14 @@ export const connTools = (manager) => [
       let explicit = false;
       if (args.endpoint) {
         explicit = true;
+        const hit = cfg.remotes.find((r) => r.endpoint === args.endpoint);
         targets = [
-          { name: "custom", endpoint: args.endpoint, token: args.token, timeout_ms: timeout },
+          {
+            name: hit?.name || args.endpoint,
+            endpoint: args.endpoint,
+            token: args.token ?? hit?.token,
+            timeout_ms: timeout,
+          },
         ];
       } else if (args.remote) {
         targets = [resolveRemote(args.remote)];
@@ -316,7 +315,7 @@ export const connTools = (manager) => [
     title: "打开串口",
     description:
       "打开一个串口连接。定位端口三选一：port（路径）/ profile（命名参数）/ sn|vid|pid（按设备标识自动找）。" +
-      "transport=remote 时改用 endpoint（ESP32 无线串口桥，如 tcp://esp32s3-01:7000），不使用 port/sn/vid/pid。" +
+      "transport=remote 时用 endpoint + port_id（如 endpoint=tcp://192.168.4.67:7000, port_id=uart1），不要传 port/sn/vid/pid。" +
       "baud_rate 默认 115200；data_bits 默认 8；stop_bits 默认 1；parity 默认 none；flow_control 默认 none。" +
       "newline 设置发送默认追加的换行（write/transact 未显式指定时的默认）。" +
       "成功后返回 connection_id，后续 read/write/transact 用它。" +
@@ -348,7 +347,7 @@ export const connTools = (manager) => [
         .positive()
         .optional()
         .describe("v1 ACK 间隔，默认 32 KiB"),
-      v1_lease_ms: z.number().int().positive().optional().describe("v1 会话租约，默认 30000"),
+      v1_lease_ms: z.number().int().positive().optional().describe("v1 会话租约，默认 120000"),
       v1_resume: z
         .boolean()
         .optional()
@@ -427,7 +426,10 @@ export const connTools = (manager) => [
       if (transport === "remote") {
         if (!merged.endpoint) throw new Error("open: transport=remote 需要 endpoint");
         if (merged.port || merged.sn || merged.vid || merged.pid) {
-          throw new Error("open: transport=remote 不接受 port/sn/vid/pid，请改用 endpoint");
+          throw new Error(
+            "open: transport=remote 不接受 port/sn/vid/pid。请用 endpoint + port_id，例如 " +
+              "open({transport:'remote', endpoint:'tcp://192.168.4.67:7000', port_id:'uart1', baud_rate:1500000})",
+          );
         }
       } else {
         if (merged.endpoint) {
@@ -714,13 +716,15 @@ export const connTools = (manager) => [
     name: "dump_to_file",
     title: "RX 直落盘（大流量抓取）",
     description:
-      "把 Rx（可选先清缓冲）边收边写入文件，返回文件路径与结尾预览——大流量/长日志不经过 MCP 搬运。 " +
-      "结束条件优先级：match(字节) 出现 > 达到 max_bytes > 静默 idle_timeout_ms > budget_ms 耗尽。" +
-      "默认文件按天归档到 ~/.cache/serial-hub-mcp/dumps/。",
+      "把 Rx（可选先清缓冲）边收边写入 hub 缓存，返回 file_id / sha256 / download_path 与结尾预览。" +
+      "大文件不进 MCP 正文。download_path 相对 hub HTTP 源（与 /mcp 同机同端口），用相同 Bearer GET 下载到 agent 本机。" +
+      "path/dir 忽略：hub 写不到 agent 磁盘，也不再返回容器绝对路径。" +
+      "结束条件：match > max_bytes > idle_timeout_ms（仅 >0 时）> budget_ms。idle 默认 0，不因静默提前停。" +
+      "下载：GET http://<hub>:8788/dumps/<file_id>，Bearer 与 /mcp 相同。",
     inputSchema: z.object({
       connection_id: connId,
-      path: z.string().optional().describe("输出文件路径（默认按天归档到 dumps 目录）"),
-      dir: z.string().optional().describe("输出目录（path 未给时用 dir）"),
+      path: z.string().optional().describe("忽略。服务端自管 file_id，不写 agent 本机路径"),
+      dir: z.string().optional().describe("忽略。文件只落 hub 缓存目录"),
       flush: z.boolean().optional().describe("先清旧缓冲再开始，默认 false"),
       match: z.string().optional().describe("出现即停的匹配串（字节级）"),
       match_encoding: z
@@ -732,26 +736,24 @@ export const connTools = (manager) => [
         .int()
         .min(0)
         .optional()
-        .describe("静默即停阈值（毫秒），默认 300"),
+        .describe("静默即停阈值（毫秒）。默认 0=不因静默提前停；仅显式传入且 >0 才生效"),
       budget_ms: z.number().int().positive().optional().describe("采集预算（毫秒），默认 5000"),
       max_bytes: z.number().int().positive().optional().describe("落盘字节上限"),
     }),
     handler: async (args) => {
       const conn = must(manager, args.connection_id);
       const match = args.match ? toBuffer(args.match, args.match_encoding || "utf8") : undefined;
-      const file =
-        args.path || (args.dir ? `${args.dir}/dump-${Date.now()}.log` : defaultDumpPath());
-      return {
-        ok: true,
-        response: await conn.dumpToFile({
-          file,
-          flush: args.flush ?? false,
-          match,
-          idleTimeoutMs: args.idle_timeout_ms ?? 300,
-          budgetMs: args.budget_ms ?? 5000,
-          maxBytes: args.max_bytes,
-        }),
-      };
+      const allocated = allocDumpFile("dump");
+      const raw = await conn.dumpToFile({
+        file: allocated.file,
+        path: allocated.file,
+        flush: args.flush ?? false,
+        match,
+        idleTimeoutMs: args.idle_timeout_ms ?? 0,
+        budgetMs: args.budget_ms ?? 5000,
+        maxBytes: args.max_bytes,
+      });
+      return { ok: true, response: publishDump(raw, allocated.file_id, allocated.file) };
     },
   }),
 ];

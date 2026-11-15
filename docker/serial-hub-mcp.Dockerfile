@@ -17,7 +17,7 @@ ENV NODE_ENV=production \
     SERIAL_HUB_MCP_SYNC_DIR=/data/remote-sync \
     SERIAL_HUB_MCP_V1_CACHE_DIR=/data/v1-cache \
     SERIAL_HUB_MCP_V1_STATE_FILE=/data/v1-cursors.json \
-    SERIAL_HUB_MCP_PROFILES_DIR=/config
+    SERIAL_HUB_MCP_PROFILES_DIR=/data/profiles
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ RUN npm ci --omit=dev || (apt-get update \
 COPY src ./src
 COPY CHANGELOG.md ./CHANGELOG.md
 
-RUN mkdir -p /data/logs /data/dumps /data/remote-sync /data/v1-cache /config \
+RUN mkdir -p /data/logs /data/dumps /data/remote-sync /data/v1-cache /data/profiles /config \
     && chown -R node:node /data /config
 USER node
 

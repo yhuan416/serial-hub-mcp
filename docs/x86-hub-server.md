@@ -66,7 +66,7 @@ docker compose -f docker/docker-compose.hub.yml up -d --build
 docker logs -f serial-hub-server
 ```
 
-镜像已推送到 Harbor：`harborcn.fujikam.com:14743/ipcs/serial-hub-server:0.1.5`（`latest` 同 digest）。
+本地镜像名是 `serial-hub-server`。compose 不写仓库地址。
 
 n100（讯美 wifi/dsp 两路 ttyACM）可直接用：
 ```bash
@@ -103,7 +103,7 @@ dump_to_file/log_query/log_stats/log_export` 等工具全部可用。
 - **多端口**：一个服务暴露整机串口，MCP 侧按 `port_id` 选路。
 - **大缓冲**：每端口默认 64 MiB ring（可调），921600/1.5M/3M 波特率下不易丢字节。
 - **更大帧**：`max_frame` 默认 1 MiB。
-- **热插拔**：进程每 2 秒重扫。原生跑在宿主机上，插上即可出现。容器里还要绑定 `/dev`，并用 `c 166:*` / `c 188:*` 放行，不能只在启动时 `--device` 写死节点。扫描只加不减，拔出的端口不会自动消失。
+- **热插拔**：进程每 2 秒重扫。插上会出现，拔掉且设备节点消失后会从列表去掉。正在打开的口会被关掉。容器里还要绑定 `/dev`，并用 `c 166:*` / `c 188:*` 放行，不能只在启动时 `--device` 写死节点。
 
 ## 7. 行为说明
 

@@ -128,7 +128,7 @@ async function main() {
       argValue("--max-window-bytes") || process.env.SERIAL_HUB_SERVER_MAX_WINDOW_BYTES,
       1024 * 1024,
     ),
-    v1LeaseMs: Number(argValue("--lease-ms") || process.env.SERIAL_HUB_SERVER_LEASE_MS || 30000),
+    v1LeaseMs: Number(argValue("--lease-ms") || process.env.SERIAL_HUB_SERVER_LEASE_MS || 120000),
     defaults: {
       baud_rate: Number(argValue("--baud") || 115200),
       data_bits: 8,

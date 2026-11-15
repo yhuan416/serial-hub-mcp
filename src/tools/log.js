@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { defineTool } from "../sdk/tool.js";
 import { connId } from "./conn.js";
+import { allocDumpFile, publishDump } from "../dump_catalog.js";
 
 export const logTools = (logStore) => {
   const requireStore = () => {
@@ -48,17 +49,26 @@ export const logTools = (logStore) => {
       description:
         "把 host 已切开的日志按方向和 seq 导出到文件。设备不是日志库，不会向设备要历史。" +
         "和 dump_to_file 的区别：dump_to_file 是实时抓还没切行的 RX；log_export 导出已经切开的行。" +
-        "本地连接没有这个导出接口时用 log_query。默认写入 $SERIAL_HUB_MCP_DUMPS_DIR。",
+        "本地连接没有这个导出接口时用 log_query。文件只落 hub 缓存，返回 file_id / sha256 / download_path；" +
+        "用相同 Bearer GET <hub-origin>/dumps/<file_id> 下载到 agent 本机。path/out_dir 忽略，不返回容器绝对路径。",
       inputSchema: z.object({
         connection_id: connId.describe("远端连接 ID（open 返回）"),
         dir: z.enum(["rx", "tx"]).optional().describe("方向，默认 rx"),
         seq_from: z.number().int().optional().describe("起始 seq（含）"),
         seq_to: z.number().int().optional().describe("结束 seq（含）"),
-        time_from: z.number().int().optional().describe("时间下界（epoch ms）；当前导出按 seq，不按时间裁剪"),
-        time_to: z.number().int().optional().describe("时间上界（epoch ms）；当前导出按 seq，不按时间裁剪"),
+        time_from: z
+          .number()
+          .int()
+          .optional()
+          .describe("时间下界（epoch ms）；当前导出按 seq，不按时间裁剪"),
+        time_to: z
+          .number()
+          .int()
+          .optional()
+          .describe("时间上界（epoch ms）；当前导出按 seq，不按时间裁剪"),
         segment: z.string().optional().describe("忽略。当前链路没有设备 SD 段"),
-        path: z.string().optional().describe("输出文件路径（优先于 out_dir）"),
-        out_dir: z.string().optional().describe("输出目录（path 未给时用）"),
+        path: z.string().optional().describe("忽略。服务端自管 file_id，不写 agent 本机路径"),
+        out_dir: z.string().optional().describe("忽略。文件只落 hub 缓存目录"),
         max_bytes: z
           .number()
           .int()
@@ -66,7 +76,15 @@ export const logTools = (logStore) => {
           .optional()
           .describe("忽略。导出的是 host 已切开的行，不按设备页大小分页"),
       }),
-      handler: async (args) => ({ ok: true, response: await requireStore().export(args) }),
+      handler: async (args) => {
+        const allocated = allocDumpFile("export");
+        const raw = await requireStore().export({
+          ...args,
+          path: allocated.file,
+          out_dir: undefined,
+        });
+        return { ok: true, response: publishDump(raw, allocated.file_id, allocated.file) };
+      },
     }),
 
     defineTool({
@@ -89,7 +107,12 @@ export const logTools = (logStore) => {
           .positive()
           .optional()
           .describe("忽略。同步的是 host 缓存，不向设备翻页"),
-        max_bytes: z.number().int().positive().optional().describe("忽略。同步的是 host 已切开的行"),
+        max_bytes: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("忽略。同步的是 host 已切开的行"),
       }),
       handler: async (args) => ({ ok: true, response: await requireStore().sync(args) }),
     }),

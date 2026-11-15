@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: docker/serial-hub-server.Dockerfile
-    image: harborcn.fujikam.com:14743/ipcs/serial-hub-server:0.1.5
+    image: serial-hub-server
     container_name: serial-hub-server
     restart: unless-stopped
     ports:
