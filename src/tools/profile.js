@@ -3,6 +3,11 @@ import { z } from "zod";
 import { defineTool } from "../sdk/tool.js";
 import * as profiles from "../profiles.js";
 
+function maskToken(p) {
+  if (!p || !p.token) return p;
+  return { ...p, token: "***" };
+}
+
 const ALLOWED = [
   "transport",
   "endpoint",
@@ -37,7 +42,7 @@ export function profileTools() {
       handler: async () => ({
         ok: true,
         response: {
-          profiles: profiles.list().map((p) => (p.token ? { ...p, token: "***" } : p)),
+          profiles: profiles.list().map(maskToken),
         },
       }),
     }),
@@ -45,7 +50,7 @@ export function profileTools() {
       name: "profile_save",
       title: "保存连接 profile",
       description:
-        "把常见连接参数存为命名 profile，供 open({profile}) 一条复用。",
+        "把常见连接参数存为命名 profile，供 open({profile}) 一条复用。返回里的 token 为 ***，文件里仍是原值。",
       inputSchema: z.object({
         name: z.string().min(1).describe("profile 名，如 quarkpi、uart0"),
         transport: z.enum(["serial", "remote"]).optional().describe("链路类型，默认 serial"),
@@ -70,7 +75,7 @@ export function profileTools() {
         const { name, ...cfg } = args;
         const cleaned = {};
         for (const k of ALLOWED) if (cfg[k] !== undefined) cleaned[k] = cfg[k];
-        return { ok: true, response: { saved: profiles.put(name, cleaned) } };
+        return { ok: true, response: { saved: maskToken(profiles.put(name, cleaned)) } };
       },
     }),
     defineTool({

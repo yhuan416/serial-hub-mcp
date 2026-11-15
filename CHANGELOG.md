@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
-- 工具面去掉传输调优参数和死字段。`open` 不再列出 `v1_*`；已存 profile 里的这些字段打开时仍生效。返回和 `profile_list` 里的 token 打码。
+- 工具面去掉传输调优参数和死字段。`open` 不再列出 `v1_*`；已存 profile 里的这些字段打开时仍生效。`open`、`get_status`、`profile_list`、`profile_save` 返回里的 token 打码。
 - `dump_to_file` 改为导出已有 host 缓存。按 seq、时间或 offset，立刻返回，不移动 read 游标。接着看新数据用 `read` 或 `receive`。
 
 ## 0.1.8 — 2026-11-16
