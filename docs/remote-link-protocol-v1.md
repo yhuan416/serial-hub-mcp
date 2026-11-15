@@ -324,7 +324,7 @@ agent 不看到帧，也不区分本地串口和远端。工具语义与 mining-
 | `log_query` / `log_stats` | 只查 host 日志。host 切行后才能查到 |
 | `log_export` / `log_sync` | 导出 host 已切开的日志。不向设备要历史 |
 | `event_query` | 当前链路不提供。返回 `supported:false` |
-| `cache_set` | 写远端发送缓存上限到 NVS，下次新建 capture 生效 |
+| `cache_set` | 协议操作，不是 MCP 工具。写发送缓存上限，下次新建 capture 生效。x86 用启动参数或同一条控制帧 |
 
 断线重连：`SUBSCRIBE { from: { capture_id, offset: last_acked } }`。
 

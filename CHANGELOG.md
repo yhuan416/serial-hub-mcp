@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.1.8 — 2026-11-16
+
+- 去掉 `cache_set`、`log_export`、`log_sync`、`event_query` 工具。查日志用 `log_query`，留档用 `dump_to_file`。改 hub 缓存走启动参数或 v1 `cache_set` 控制帧。
+- x86 hub 对齐现行协议：已有会话时非 writer 不能 `config`；`cache_set` 下次新建 capture 生效并带 `note`；`claim_writer` 只认 `true`/`1`。
 - `cache_set` 的说明写明 `applied=next`：当前 capture 保持旧缓冲，最后一个会话离开并过 60 秒 linger 后新建才用新值。不是重启。
 
 ## 0.1.7 — 2026-11-16

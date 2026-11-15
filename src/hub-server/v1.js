@@ -9,6 +9,12 @@
 //
 // 发送缓存不是日志。history 固定 "none"，HISTORY_* 回 unsupported。
 
+function claimsWriter(v) {
+  if (v === true || v === 1) return true;
+  if (typeof v === "string" && (v === "true" || v === "1")) return true;
+  return false;
+}
+
 import crypto from "node:crypto";
 
 import {
@@ -508,6 +514,7 @@ export class V1Connection {
     const op = msg.op;
     const handler = {
       ping: () => this._opPing(msg),
+      cache_set: () => this._opCacheSet(msg),
       config: () => this._opConfig(msg),
       subscribe: () => this._opSubscribe(msg),
       unsubscribe: () => this._opUnsubscribe(msg),
@@ -538,6 +545,24 @@ export class V1Connection {
     if (!session.writer) throw Object.assign(new Error("not writer"), { code: "not_controller" });
   }
 
+  async _opCacheSet(msg) {
+    const raw = Number(msg.cap_bytes);
+    const kb = Number(msg.cap_kb);
+    const n = Number.isFinite(raw) && raw > 0 ? raw : Number.isFinite(kb) ? kb * 1024 : 0;
+    if (!n) throw Object.assign(new Error("cap_bytes or cap_kb required"), { code: "bad_request" });
+    const applied = this.server.setCaptureMaxBytes(n);
+    this.sendControl({
+      id: msg.id,
+      ok: true,
+      result: {
+        cap_bytes: this.server.captureMaxBytes,
+        saved: applied.saved,
+        applied: applied.applied,
+        note: applied.note,
+      },
+    });
+  }
+
   async _opPing(msg) {
     const now = Date.now();
     for (const s of this.sessions.values()) s.lastActivity = now;
@@ -549,8 +574,14 @@ export class V1Connection {
   }
 
   async _opConfig(msg) {
-    const session = this._sessionOf(msg);
-    if (session) this._needWriter(session);
+    const st0 = this.server.manager.resolve(msg.port);
+    const cap = st0?.capture;
+    if (cap && !cap.closed && cap.sessions.size > 0) {
+      const session = this._sessionOf(msg);
+      if (!session || session.port !== st0.id || !session.writer) {
+        throw Object.assign(new Error("not writer"), { code: "not_controller" });
+      }
+    }
     const st = await this.server.manager.openPort(msg.port, {
       baud_rate: msg.baud_rate,
       data_bits: msg.data_bits,
@@ -628,7 +659,7 @@ export class V1Connection {
     session.resetCursor(startOffset, startSeq);
     this.sessions.set(session.id, session);
     cap.attach(session);
-    if (msg.claim_writer) cap.claimWriter(session);
+    if (claimsWriter(msg.claim_writer)) cap.claimWriter(session);
     this.sendControl({
       id: msg.id,
       ok: true,

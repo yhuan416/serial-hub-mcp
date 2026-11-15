@@ -2,6 +2,8 @@
 
 import net from "node:net";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { PortManager } from "./ports.js";
 import { isV1Magic, V1Connection } from "./v1.js";
 
@@ -46,7 +48,9 @@ export class HubServer {
     this.manager.maxHoldMs = opts.maxHoldMs ?? 30000;
     this.scanIntervalMs = opts.scanIntervalMs ?? 2000;
     this.captureLingerMs = Math.max(0, opts.captureLingerMs ?? 60000);
+    this.dataDir = opts.dataDir || null;
     this.captureMaxBytes = Math.max(1024, opts.captureMaxBytes ?? 128 * 1024 * 1024);
+    this._loadCaptureMax();
     this.v1WindowBytes = Math.max(4096, opts.v1WindowBytes ?? 256 * 1024);
     this.v1MaxWindowBytes = Math.max(this.v1WindowBytes, opts.v1MaxWindowBytes ?? 1024 * 1024);
     this.v1LeaseMs = Math.max(1000, opts.v1LeaseMs ?? 30000);
@@ -121,6 +125,47 @@ export class HubServer {
     st.v1 = conn;
     this.v1Conns.add(conn);
     st.raw = Buffer.alloc(0);
+  }
+
+  _captureMaxFile() {
+    return this.dataDir ? path.join(this.dataDir, "capture-max-bytes.json") : null;
+  }
+
+  _loadCaptureMax() {
+    const file = this._captureMaxFile();
+    if (!file) return;
+    try {
+      const n = JSON.parse(fs.readFileSync(file, "utf8")).cap_bytes;
+      if (Number.isFinite(n) && n >= 32 * 1024) this.captureMaxBytes = n;
+    } catch (_) {}
+  }
+
+  setCaptureMaxBytes(raw) {
+    let n = Math.floor(Number(raw) || 0);
+    const min = 32 * 1024;
+    const max = 2 * 1024 * 1024;
+    if (n < min) n = min;
+    if (n > max) n = max;
+    n &= ~0xfff;
+    if (n < min) n = min;
+    this.captureMaxBytes = n;
+    let saved = false;
+    const file = this._captureMaxFile();
+    if (file) {
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify({ cap_bytes: n }));
+        saved = true;
+      } catch (_) {}
+    }
+    const live = [...this.manager.ports.values()].some((st) => st.capture && !st.capture.closed);
+    return {
+      saved,
+      applied: live ? "next" : "now",
+      note: live
+        ? "current capture keeps its buffer until 60s after the last session; not a reboot"
+        : "no live capture; the next allocation uses this size",
+    };
   }
 
   v1HelloResult(conn) {

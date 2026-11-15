@@ -307,6 +307,44 @@ test("v1: history_query 返回 unsupported", async (t) => {
   c.socket.destroy();
 });
 
+test("v1: 已有 writer 时，别的连接不能 CONFIG", async (t) => {
+  const { connect } = await setup(t);
+  const a = await connect();
+  const b = await connect();
+  await a.hello("t1");
+  await b.hello("t1");
+  await a.control("subscribe", { port: "ttyFAKE0" });
+  const denied = await b.control("config", { port: "ttyFAKE0", baud_rate: 9600 });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.error.code, "not_controller");
+  a.socket.destroy();
+  b.socket.destroy();
+});
+
+test("v1: cache_set 不改活着的 capture，claim_writer 认字符串", async (t) => {
+  const { connect, server } = await setup(t, { captureLingerMs: 40 });
+  const c = await connect();
+  await c.hello("t1");
+  const sub = await c.control("subscribe", { port: "ttyFAKE0" });
+  const set = await c.control("cache_set", { cap_bytes: 65536 });
+  assert.equal(set.ok, true);
+  assert.equal(set.result.applied, "next");
+  assert.equal(set.result.cap_bytes, 65536);
+  assert.match(set.result.note, /60s/);
+  assert.equal(server.manager.resolve("ttyFAKE0").capture.maxBytes, 4096);
+  const robbed = await c.control("subscribe", {
+    port: "ttyFAKE0",
+    claim_writer: "false",
+  });
+  assert.equal(robbed.result.writer, false);
+  const claimed = await c.control("subscribe", {
+    port: "ttyFAKE0",
+    claim_writer: "true",
+  });
+  assert.equal(claimed.result.writer, true);
+  c.socket.destroy();
+});
+
 test("非 SH 首帧直接断开", async (t) => {
   const { port } = await setup(t);
   const socket = net.connect(port);

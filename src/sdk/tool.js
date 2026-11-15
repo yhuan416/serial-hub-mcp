@@ -5,11 +5,11 @@
 
 import { packResult, normalizeError } from "./result.js";
 
-export function defineTool({ name, title, description, inputSchema, handler }) {
+export function defineTool({ name, title, description, inputSchema, handler, hidden = false }) {
   if (!name || typeof handler !== "function") {
     throw new Error("defineTool: name 与 handler 必填");
   }
-  return { name, title, description, inputSchema, handler };
+  return { name, title, description, inputSchema, handler, hidden };
 }
 
 /**
@@ -21,6 +21,7 @@ export function defineTool({ name, title, description, inputSchema, handler }) {
 export function registerTools(server, tools, { queue } = {}) {
   let count = 0;
   for (const tool of tools) {
+    if (tool.hidden) continue;
     if (!tool || !tool.name || typeof tool.handler !== "function") {
       throw new Error(`registerTools: 非法工具描述 ${tool && tool.name}`);
     }

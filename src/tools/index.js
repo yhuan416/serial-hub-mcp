@@ -8,7 +8,9 @@ import { profileTools } from "./profile.js";
 const CHANGELOG_PATH = fileURLToPath(new URL("../../CHANGELOG.md", import.meta.url));
 
 export function buildTools(manager, logStore, { version = "unknown" } = {}) {
-  const baseTools = [...connTools(manager), ...logTools(logStore), ...profileTools()];
+  const baseTools = [...connTools(manager), ...logTools(logStore), ...profileTools()].filter(
+    (t) => !t.hidden,
+  );
   return [
     ...baseTools,
     createServiceInfoTool({

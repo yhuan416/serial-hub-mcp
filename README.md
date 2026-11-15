@@ -114,10 +114,8 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 | `set_dtr_rts` | Set DTR/RTS, optionally pulse (reset/bootloader) |
 | `send_break` | Send a BREAK for a given duration |
 | `profile_list/save/delete` | Reusable named connection profiles |
+| `open_list` | Ports opened before, with baud and optional name |
 | `log_query/stats/clear` | Search, inspect and clear logs (no `connection_id` = local + remote) |
-| `log_export` / `log_sync` | Copy host log lines to a file. The host cache is the log; the device is only a send buffer |
-| `event_query` | Not a device event log on this link. Returns `supported:false` |
-| `cache_set` | Persist a remote send-cache size in device NVS |
 | `service_info` | Service name, version, changelog |
 
 ## Quick start

@@ -53,8 +53,13 @@ token 读取顺序：`--token` > `SERIAL_HUB_SERVER_TOKEN` > `<data-dir>/token`�
 | `--max-hold-ms` | `30000` | READ 长轮询硬上限 |
 | `--scan-interval-ms` | `2000` | 端口热插拔扫描周期 |
 | `--baud` | `115200` | 新端口默认波特率 |
+| `--capture-max-bytes` | `128MiB` | 发送缓存上限。也可发协议 `cache_set` |
+| `--capture-linger-ms` | `60000` | 最后一个会话离开后，capture 再留多久 |
+| `--lease-ms` | `120000` | 会话租约。ping 会续租 |
 
-环境变量同名映射：`SERIAL_HUB_SERVER_TOKEN/LISTEN/DATA_DIR/PORTS/RING_BYTES/RETENTION_BYTES`。
+环境变量同名映射：`SERIAL_HUB_SERVER_TOKEN/LISTEN/DATA_DIR/PORTS/RING_BYTES/RETENTION_BYTES/CAPTURE_MAX_BYTES/CAPTURE_LINGER_MS/LEASE_MS`。
+
+这些不进 MCP 工具列表。要改就重启 hub 时带上参数。发送缓存也可以对 hub 发 v1 控制帧 `{"op":"cache_set","cap_bytes":134217728}`。`applied=next` 表示当前 capture 还用旧缓冲，最后一个会话离开并过 60 秒后新建才换。
 
 ## 3. Docker 部署
 

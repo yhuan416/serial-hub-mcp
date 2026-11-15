@@ -62,10 +62,8 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http --host 0.0.0.0 --port 878
 | `receive` / `dump_to_file` | 观察一段时间，或直接落盘 |
 | `set_dtr_rts` / `send_break` | 控制线与 BREAK |
 | `get_status` | 连接状态、计数、是否在重连 |
+| `open_list` | 查这个口开过什么波特率、叫什么名字 |
 | `log_query` / `log_stats` / `log_clear` | 查 host 上已经切开的日志 |
-| `log_export` / `log_sync` | 导出或增量归档 host 已切开的日志。设备不是日志库 |
-| `event_query` | 当前链路不提供设备事件日志，返回 `supported:false` |
-| `cache_set` | 把远端 RAM 发送缓存大小写入设备 NVS |
 | `profile_*` | 保存常用连接参数 |
 | `service_info` | 版本与 changelog |
 
@@ -78,7 +76,6 @@ list_ports()
 open({ remote: "esp32-s3", port_id: "uart1", baud_rate: 1500000 })
 open({ remote: "n100", port_id: "ttyACM0", baud_rate: 115200 })
 receive({ connection_id: "...", budget_ms: 5000 })
-cache_set({ connection_id: "...", cap_bytes: 524288 })
 close({ connection_id: "..." })
 ```
 
@@ -98,7 +95,13 @@ open({
 
 ## 发送缓存
 
-ESP32 的 RAM 发送缓存默认 256KiB，存在 NVS 命名空间 `shb` 的 `cap_bytes`。范围 32KiB–2MiB，4KiB 对齐。`cache_set` 写入后，已经在跑的 capture 保持旧大小，下次新建才换成新值。HELLO 的 `caps.capture.max_bytes` 是当前配置值。
+发送缓存和保留时间不进 MCP 工具列表。调试时用默认值即可。
+
+要改的话：
+
+- x86 hub：重启时设 `SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES`、`SERIAL_HUB_SERVER_RETENTION_DAYS`、`SERIAL_HUB_SERVER_LEASE_MS`。参数表见 [docs/x86-hub-server.md](docs/x86-hub-server.md)。
+- ESP32 桥：NVS 命名空间 `shb` 的 `cap_bytes`，默认 256KiB，范围 32KiB–2MiB，4KiB 对齐。也可对桥发 v1 控制帧 `{"op":"cache_set","cap_bytes":262144}`。`applied=next` 表示当前 capture 还用旧缓冲，最后一个会话离开并过 60 秒后新建才换。不是重启。
+- MCP 自己的日志、dump、v1 捕获默认留 7 天。`SERIAL_HUB_MCP_CACHE_TTL_DAYS=0` 关闭。要长期保存请 `dump_to_file` 后下载到本机。
 
 RAM 满了会先把未 ACK 的字节溢到 SD（`/sdcard/shb-cache/`）。写失败才 GAP。x86 hub 的缓存大小用启动参数，不走这条 NVS。
 
