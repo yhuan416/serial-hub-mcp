@@ -40,6 +40,7 @@ class LogStore {
     this.dir = opts.dir === undefined ? defaultLogsDir() : opts.dir;
     this.memEntries = opts.memEntries ?? DEFAULT_MEM_ENTRIES;
     this.retainBytes = opts.retainBytes ?? DEFAULT_RETAIN_BYTES;
+    this.retainDays = opts.retainDays ?? 7;
     this.partBytes = opts.partBytes && opts.partBytes > 0 ? opts.partBytes : DEFAULT_PART_BYTES;
     this.seq = 0;
     this.mem = []; // 内存条目，新在尾部，按 seq 升序
@@ -170,14 +171,27 @@ class LogStore {
     );
   }
 
-  /** 淘汰：保留上限内，从最旧分片整文件删，保证至少留下 active 分片。 */
+  _partTooOld(part) {
+    if (!(this.retainDays > 0)) return false;
+    const cutoff = Date.now() - this.retainDays * 86400000;
+    if (part.tsMax && part.tsMax < cutoff) return true;
+    try {
+      return fs.statSync(part.file).mtimeMs < cutoff;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** 淘汰：超体积或超 TTL 时从最旧分片整文件删，保证至少留下 active 分片。 */
   _enforceRetention(st) {
-    if (this.retainBytes <= 0) return;
+    if (this.retainBytes <= 0 && !(this.retainDays > 0)) return;
     let total = 0;
     for (const p of st.parts) total += p.size;
-    while (st.parts.length > 1 && total > this.retainBytes) {
+    while (st.parts.length > 1) {
       const oldest = st.parts[0];
-      if (oldest === st.parts[st.parts.length - 1]) break; // 绝不删 active 分片
+      if (oldest === st.parts[st.parts.length - 1]) break;
+      const tooBig = this.retainBytes > 0 && total > this.retainBytes;
+      if (!tooBig && !this._partTooOld(oldest)) break;
       total -= oldest.size;
       try {
         fs.unlinkSync(oldest.file);
@@ -452,6 +466,7 @@ class LogStore {
         disk_partitions: partitions,
         disk_bytes: diskBytes,
         retain_bytes: this.retainBytes,
+        retain_days: this.retainDays,
         part_bytes: this.partBytes,
       },
       source: {

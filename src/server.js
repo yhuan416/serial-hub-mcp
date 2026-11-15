@@ -25,6 +25,7 @@ import { LogRouter } from "./log_router.js";
 import { keyedSerialQueue } from "./keyed_queue.js";
 import { buildTools } from "./tools/index.js";
 import { resolveDump } from "./dump_catalog.js";
+import { cacheTtlDays, startCacheSweep } from "./cache_ttl.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -43,7 +44,9 @@ const logStore = new LogStore({
       ? Number(process.env.SERIAL_HUB_MCP_LOG_RETAIN_BYTES)
       : undefined,
   partBytes: Number(process.env.SERIAL_HUB_MCP_LOG_PART_BYTES) || undefined,
+  retainDays: cacheTtlDays(),
 });
+const cacheSweep = startCacheSweep();
 
 // hub：本地连接用 LogStore；远端连接用 host 侧缓存。
 const logRouter = new LogRouter(logStore);
@@ -97,6 +100,7 @@ if (httpMode) {
     }),
     resolveDump,
     onShutdown: async () => {
+      cacheSweep.stop();
       await manager.closeAll();
     },
   });
@@ -104,6 +108,7 @@ if (httpMode) {
   await runStdio(createServer(), {
     name: SERVICE,
     onShutdown: async () => {
+      cacheSweep.stop();
       await manager.closeAll();
     },
   });

@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.1.7 — 2026-11-16
+
+- MCP 侧日志、v1 捕获、dump 暂存和 remote-sync 默认保留 7 天，过期删除。`SERIAL_HUB_MCP_CACHE_TTL_DAYS=0` 关闭。要长期保存请把 dump 下载到本机。
+
 ## 0.1.6 — 2026-11-16
 
 - `open` 成功后按 endpoint+port_id+波特率去重记入 `open_list`。可选 `name`；不传则保留上次名字。不存 token。
