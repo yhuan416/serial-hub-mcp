@@ -1,4 +1,4 @@
-// 串口工具装配：conn（连接/收发/接收窗口/落盘）+ log（日志）+ profile（参数复用）+ service_info。
+// 串口工具装配：conn（连接/收发/接收窗口/落盘/打开记录）+ log（日志）+ profile（参数复用）+ service_info。
 import { fileURLToPath } from "node:url";
 import { createServiceInfoTool } from "../sdk/service-info.js";
 import { connTools } from "./conn.js";

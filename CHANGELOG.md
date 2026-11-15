@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.1.6 — 2026-11-16
+
+- `open` 成功后按 endpoint+port_id+波特率去重记入 `open_list`。可选 `name`；不传则保留上次名字。不存 token。
 - 请求了 `claim_writer` 但远端未授予写权时，`open` 失败，不再静默变成只读。已有 writer 时先订阅抢占，再改串口参数。profile 可保存 `claim_writer`。
 - 读到缺口时返回 `gap_from_offset` / `gap_to_offset`，`gap_bytes` 为跳过的字节数。`mode=gap` 时 `open.gaps` 带上请求游标到续传点的范围，下一次 `read` 也会报这个缺口。capture 过期重开时 `resume_lost` 留下旧游标。
 - profiles 在容器里改写到 `/data/profiles`。`/config` 只读，`profile_save` 不再 EROFS。

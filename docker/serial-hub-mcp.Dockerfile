@@ -17,7 +17,8 @@ ENV NODE_ENV=production \
     SERIAL_HUB_MCP_SYNC_DIR=/data/remote-sync \
     SERIAL_HUB_MCP_V1_CACHE_DIR=/data/v1-cache \
     SERIAL_HUB_MCP_V1_STATE_FILE=/data/v1-cursors.json \
-    SERIAL_HUB_MCP_PROFILES_DIR=/data/profiles
+    SERIAL_HUB_MCP_PROFILES_DIR=/data/profiles \
+    SERIAL_HUB_MCP_OPENS_FILE=/data/opens.json
 
 WORKDIR /app
 

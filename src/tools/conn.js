@@ -10,6 +10,7 @@ import * as profiles from "../profiles.js";
 import { probeRemote } from "../remote/v1_connection.js";
 import { loadRemotes, resolveRemote } from "../remotes.js";
 import { allocDumpFile, publishDump } from "../dump_catalog.js";
+import { listOpens, recordOpen } from "../open_log.js";
 
 export const connId = z.string().min(1).describe("连接 ID（由 open 返回）");
 
@@ -319,7 +320,8 @@ export const connTools = (manager) => [
       "baud_rate 默认 115200；data_bits 默认 8；stop_bits 默认 1；parity 默认 none；flow_control 默认 none。" +
       "newline 设置发送默认追加的换行（write/transact 未显式指定时的默认）。" +
       "成功后返回 connection_id，后续 read/write/transact 用它。" +
-      "同一路 UART 只有一个 writer。第二路要写时传 claim_writer:true。",
+      "同一路 UART 只有一个 writer。第二路要写时传 claim_writer:true。" +
+      "可选 name 给这次打开起名。成功后按 endpoint+port_id+波特率去重记入 open_list。",
     inputSchema: z.object({
       transport: z
         .enum(["serial", "remote"])
@@ -395,9 +397,12 @@ export const connTools = (manager) => [
         .optional()
         .describe("内部 RX 缓冲上限字节数，默认 4194304 (4 MiB)"),
       newline: newlineField,
+      name: z.string().optional().describe("这次打开的名字，如「主控」。不传则保留上次名字"),
     }),
     handler: async (args) => {
       const merged = { ...args };
+      const openName = merged.name;
+      delete merged.name;
 
       // 1) 从 profile 取未显式给定的参数
       if (args.profile) {
@@ -454,8 +459,22 @@ export const connTools = (manager) => [
       delete merged.vid;
       delete merged.pid;
 
-      return { ok: true, response: await manager.open(merged) };
+      const response = await manager.open(merged);
+      recordOpen(response, openName);
+      return { ok: true, response };
     },
+  }),
+
+  defineTool({
+    name: "open_list",
+    title: "已打开过的会话",
+    description:
+      "列出成功打开过的端口索引。同一 endpoint+port_id+波特率只留一行，重复打开只更新时间和次数。不存 token。",
+    inputSchema: z.object({
+      port: z.string().optional().describe("按 port_id 或本机串口路径精确过滤"),
+      name: z.string().optional().describe("按名字子串过滤，不区分大小写"),
+    }),
+    handler: async (args) => ({ ok: true, response: listOpens(args) }),
   }),
 
   defineTool({
