@@ -318,7 +318,7 @@ agent 不看到帧，也不区分本地串口和远端。工具语义与 mining-
 | `read` | 读 host 缓存里尚未被这次 read 消费的字节。cat 语义 |
 | `write` | 只发。非 writer 失败 `not_controller` |
 | `transact` | 先记下 host 的 `rxCursor` 当 barrier，再 write，再 read。写之前的字节不算回包。barrier 在 host，不依赖远端历史 |
-| `receive` | 观察窗口，直到 match / 静默 / 预算 |
+| `receive` | 观察窗口，直到 match / 静默 / 预算。`start=flush` 把读游标跳到当前最新字节，只收之后新到的，不清缓存 |
 | `dump_to_file` | 按 seq、时间或 offset 导出 host 已有缓存。不读新数据，不移动 read 游标 |
 | `set_dtr_rts` / `send_break` | writer 控制线 |
 | `log_query` / `log_stats` / `log_clear` | 只查 host 日志。host 切行后才能查到。`log_clear` 不带 segment |

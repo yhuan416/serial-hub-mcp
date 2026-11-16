@@ -94,6 +94,8 @@ open({
 
 链路是明文 TCP。只在局域网或 VPN 里用。
 
+`log_query` / `dump_to_file` 不传 `time_from` 会带回缓存里更早的数据。只要开始观察之后的，先取当前 epoch ms 再传 `time_from`。`receive` 默认从读游标接着收，可能含旧字节；`start=flush` 把游标跳到当前最新字节，只收之后新到的，不清缓存。
+
 ## 发送缓存
 
 发送缓存和保留时间不进 MCP 工具列表。调试时用默认值即可。

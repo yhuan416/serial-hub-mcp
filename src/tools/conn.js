@@ -632,14 +632,15 @@ export const connTools = (manager) => [
     description:
       "持续消费全部到达流量，直到命中 match(字节)、达到 max_bytes、静默 idle_timeout_ms、或 budget_ms 耗尽。" +
       "结束时不丢弃流量——期间所有字节如实带回，由 matched/stopped_reason 说明命中情况；内容判读交给 agent。" +
-      "start=cursor 从当前游标起；start=flush 先清缓冲（干净窗口）再开始；可选 reset 复位（配合 start=flush 抓启动日志）。" +
-      "抓 boot 示例：receive({start:'flush', reset:'dtr', budget_ms:15000})。",
+      "start=cursor（默认）从这条连接的读游标接着收。resume 过的连接游标可能落在最新字节前面，那些旧字节也会带回，不要当成这次的新输出。" +
+      "start=flush 把读游标跳到 host 缓存里已经有的最新字节，之后只收这个点之后新到的。不清缓存、不复位设备；旧行仍可用 log_query/dump_to_file 按 time_from 查。" +
+      "要设备重启后再看，再加 reset。抓 boot：receive({start:'flush', reset:'dtr', budget_ms:15000})。",
     inputSchema: z.object({
       connection_id: connId,
       start: z
         .enum(["cursor", "flush"])
         .optional()
-        .describe("cursor=从当前游标（默认）；flush=先清缓冲再开始"),
+        .describe("cursor=从读游标接着收（默认，可能含游标后的旧字节）；flush=跳到当前最新字节，只收之后新到的，不清缓存"),
       reset: z
         .enum(["none", "dtr", "rts"])
         .optional()
@@ -692,13 +693,14 @@ export const connTools = (manager) => [
     description:
       "把 host 已有缓存导出成文件，立刻返回 file_id / sha256 / download_path。不读新数据，不移动 read 游标。" +
       "默认按行索引（seq/时间）。二进制没有换行时传 offset_from/offset_to 导出原始字节。" +
+      "不传 time_from/seq_from/offset_from 会从 host 缓存里还留着的最早数据导出，可能早于你开始观察。只要这次之后的，先 time_now 取 epoch_ms，再传 time_from。time_from 含该时刻，不移动 read 游标。" +
       "接着看新数据用 read 或 receive。下载：GET http://<hub>:8788/dumps/<file_id>，Bearer 与 /mcp 相同。",
     inputSchema: z.object({
       connection_id: connId,
       dir: z.enum(["rx", "tx"]).optional().describe("行方向，默认两边"),
       seq_from: z.number().int().optional().describe("起始 seq（含）"),
       seq_to: z.number().int().optional().describe("结束 seq（含）"),
-      time_from: z.number().int().optional().describe("起始时间，epoch ms（含）"),
+      time_from: z.number().int().optional().describe("起始时间，epoch ms（含）。不传则从缓存里最早的已留数据导出，可能早于本次观察"),
       time_to: z.number().int().optional().describe("结束时间，epoch ms（含）"),
       offset_from: z.number().int().optional().describe("原始字节起始偏移。给出后按字节环导出，不用 seq"),
       offset_to: z.number().int().optional().describe("原始字节结束偏移，不含"),
