@@ -1,8 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MCPClient } from "../test-utils/mcp_client.js";
+
+process.env.SERIAL_HUB_MCP_STORE_DIR = fs.mkdtempSync(join(os.tmpdir(), "serial-hub-store-smoke-"));
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(__dirname, "..", "src", "server.js");

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createLink, DEFAULT_BAUD, FLOW_MAP, TRANSPORTS } from "./links/index.js";
 import { openV1Connection, V1LogStore } from "./remote/v1_connection.js";
+import { HostLogStore } from "./host_log_store.js";
 
 // 默认 RX 缓冲上限。可用 open 的 rx_buffer_size 扩大（如高速串口/长时间日志）。
 // 注意：此值只约束"未消费"的积压，不是生命周期内存上限；消费后（read/transact）即时释放。
@@ -660,6 +661,7 @@ class ConnectionManager {
   constructor(logStore, options = {}) {
     this.connections = new Map();
     this.logStore = logStore || null;
+    this.remoteStore = options.remoteStore || null;
     this.linkFactory = options.linkFactory || createLink;
   }
 
@@ -730,9 +732,11 @@ class ConnectionManager {
     };
 
     if (transport === "remote") {
+      const hostStore = this.remoteStore instanceof HostLogStore ? this.remoteStore : null;
       const conn = await openV1Connection(config, {
         leaseMs: config.v1_lease_ms,
         ackInterval: config.v1_ack_interval_bytes,
+        hostStore,
       });
       this.connections.set(conn.id, conn);
       if (this.logStore && typeof this.logStore.bind === "function") {

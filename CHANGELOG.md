@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- host 侧本地日志新增 `HostLogStore`（默认 `SERIAL_HUB_MCP_STORE=v2`）：按行写二进制 segment（CRC/offset），SQLite(WAL) 只存 segment/block 索引；查询按 seq/时间裁剪 block，支持段轮转、7 天/字节保留、崩溃尾段恢复。远端 v1 会话的 host 缓存也已接入同一引擎（local/remote 分目录，避免 LogRouter 全量查询重复计数）；远端 hub-server 自己的 ring/capture 不变。
+- Docker 基础镜像改用 Node 22 LTS：Node 24.19 + better-sqlite3 11.x 在退出时会触发原生断言/容器重启。
+- `SERIAL_HUB_MCP_STORE=legacy` 保留旧 JSONL 实现；旧数据不会自动导入。
+
 ## 0.2.0 — 2026-11-17
 
 - `--http` 自带网页调试界面：`GET /` 以 tab 形式实时展示本进程里已打开的各串口收发。新增 `终端 | 日志` 两个视图：终端用内置 xterm.js，按键即时发送（`/api/input` 绕过连接队列），支持 ANSI/光标/清屏/滚回和 Enter/退格映射；日志保留时间戳、历史、下载。`/api/connections`、`/api/terminal`、`/api/history`、`/api/dump`、`/api/write`、`/api/stream` 复用 MCP 工具语义并共用 Bearer token；`SERIAL_HUB_MCP_HTTP_UI=0` 关闭。

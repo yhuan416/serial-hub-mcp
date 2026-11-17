@@ -13,8 +13,9 @@ export class LogRouter {
   /**
    * @param {object|null} localStore 本地 LogStore；作为未绑定连接的默认后端
    */
-  constructor(localStore) {
+  constructor(localStore, options = {}) {
     this.localStore = localStore || null;
+    this.remoteStore = options.remoteStore || null;
     this.byConn = new Map();
   }
 
@@ -199,6 +200,14 @@ export class LogRouter {
         cleared.push({ connection_id: cid, transport: "remote", ...r });
       } catch (err) {
         errors.push({ connection_id: cid, transport: "remote", error: err.message });
+      }
+    }
+    if (this.remoteStore && typeof this.remoteStore.clear === "function") {
+      try {
+        const r = await this.remoteStore.clear();
+        cleared.push({ connection_id: null, transport: "remote-all", ...r });
+      } catch (err) {
+        errors.push({ connection_id: null, transport: "remote-all", error: err.message });
       }
     }
     return { scope: "all", cleared, errors };

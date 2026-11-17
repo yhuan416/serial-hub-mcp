@@ -10,6 +10,7 @@ import { EventEmitter } from "node:events";
 import { HubServer } from "../src/hub-server/server.js";
 import { ConnectionManager } from "../src/connection.js";
 import { LogRouter } from "../src/log_router.js";
+import { HostLogStore } from "../src/host_log_store.js";
 
 class FakeSerial extends EventEmitter {
   constructor(settings) {
@@ -65,10 +66,14 @@ async function setup(t, opts = {}) {
     ...opts,
   });
   const addr = await server.listen({ host: "127.0.0.1", port: 0 });
-  const manager = new ConnectionManager(new LogRouter(null));
+  const remoteStore = opts.useHostStore
+    ? new HostLogStore({ dir: path.join(dir, "remote-store"), flushMs: 60_000 })
+    : null;
+  const manager = new ConnectionManager(new LogRouter(null), { remoteStore });
   t.after(async () => {
     await manager.closeAll();
     await server.close();
+    remoteStore?.close();
     if (prevState === undefined) delete process.env.SERIAL_HUB_MCP_V1_STATE_FILE;
     else process.env.SERIAL_HUB_MCP_V1_STATE_FILE = prevState;
     if (prevCache === undefined) delete process.env.SERIAL_HUB_MCP_V1_CACHE_DIR;
@@ -237,5 +242,42 @@ test("host v1: 断线自动重连 + resume", async (t) => {
     q.entries.map((e) => e.line),
     ["one", "two"],
   );
+  await manager.close(st.connection_id);
+});
+
+test("host v1 + HostLogStore: durable log_query/stats/dump/sync/clear", async (t) => {
+  const { manager, serials, open } = await setup(t, { useHostStore: true });
+  const st = await open();
+  const conn = manager.get(st.connection_id);
+  serials.get("ttyFAKE0").emitData(Buffer.from("one\r\ntwo\r\n"));
+  const r = await conn.read({ waitMs: 1000 });
+  assert.equal(r.data.toString(), "one\r\ntwo\r\n");
+
+  const q = await manager.logStore.query({
+    connection_id: st.connection_id,
+    contains: "two",
+  });
+  assert.equal(q.count, 1);
+  assert.equal(q.entries[0].line, "two");
+  assert.equal(q.entries[0].hex, Buffer.from("two\r\n").toString("hex"));
+
+  const stats = await manager.logStore.stats(st.connection_id);
+  assert.equal(stats.source, "host-cache");
+  assert.ok(stats.total >= 2);
+
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "shub-host-store-export-"));
+  const ex = await manager.logStore.export({ connection_id: st.connection_id, out_dir: outDir });
+  assert.ok(fs.readFileSync(ex.file, "utf8").includes("one\r\ntwo\r\n"));
+  const syncDir = path.join(outDir, "sync");
+  const synced = await manager.logStore.sync({ connection_id: st.connection_id, out_dir: syncDir });
+  assert.equal(synced.source, "host-cache");
+  assert.ok(fs.readFileSync(path.join(syncDir, "rx.log"), "utf8").includes("one\r\n"));
+  const again = await manager.logStore.sync({ connection_id: st.connection_id, out_dir: syncDir });
+  assert.equal(again.files.find((f) => f.dir === "rx").lines, 0);
+  fs.rmSync(outDir, { recursive: true, force: true });
+
+  await manager.logStore.clear(st.connection_id, {});
+  const after = await manager.logStore.query({ connection_id: st.connection_id });
+  assert.equal(after.count, 0);
   await manager.close(st.connection_id);
 });

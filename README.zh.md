@@ -112,6 +112,25 @@ open({
 
 `log_query` / `dump_to_file` 不传 `time_from` 会带回缓存里更早的数据。只要开始观察之后的，先取当前 epoch ms 再传 `time_from`。`receive` 默认从读游标接着收，可能含旧字节；`start=flush` 把游标跳到当前最新字节，只收之后新到的，不清缓存。
 
+### host 缓存存储
+
+hub-mcp 本机日志默认使用 `SERIAL_HUB_MCP_STORE=v2`：按行写二进制 segment，SQLite(WAL) 只存
+segment/block 索引，`log_query`/历史/`dump_to_file` 按 seq、时间或 offset 只读需要的 block。
+`SERIAL_HUB_MCP_STORE=legacy` 可回到旧的 JSONL 分片实现。
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `SERIAL_HUB_MCP_STORE` | `v2` | `v2` 或 `legacy` |
+| `SERIAL_HUB_MCP_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/local` | 本地连接 v2 目录 |
+| `SERIAL_HUB_MCP_REMOTE_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/remote` | 远端 v1 host 缓存目录 |
+| `SERIAL_HUB_MCP_STORE_RETAIN_BYTES` | 512 MiB/连接 | v2 每连接磁盘上限，`<=0` 不按字节淘汰 |
+| `SERIAL_HUB_MCP_STORE_SEGMENT_BYTES` | 16 MiB | 单段大小 |
+| `SERIAL_HUB_MCP_STORE_BLOCK_BYTES` | 1 MiB | block 索引粒度 |
+| `SERIAL_HUB_MCP_STORE_FLUSH_MS` | 500 | 批量落盘间隔 |
+
+v2 同时覆盖本地串口和远端 v1 会话在 hub-mcp 侧的日志；远端 hub-server 自己的 ring/capture
+不变。旧 JSONL 不会自动导入；要看旧数据先切 `legacy`。
+
 ## 发送缓存
 
 发送缓存和保留时间不进 MCP 工具列表。调试时用默认值即可。

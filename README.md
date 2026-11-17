@@ -201,6 +201,26 @@ All paths use XDG defaults and can be overridden:
 - Each log entry is `{ seq, ts, conn, dir, offset, line, hex, bytes }`. Remote `seq` is
   assigned by the host, not by the device.
 
+### Host log store
+
+The MCP host keeps durable local logs in `SERIAL_HUB_MCP_STORE=v2` by default: line records go to
+binary segments, SQLite(WAL) stores only segment/block indexes, and `log_query`/history/`dump_to_file`
+read only the blocks they need. Set `SERIAL_HUB_MCP_STORE=legacy` to use the old JSONL partitions.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SERIAL_HUB_MCP_STORE` | `v2` | `v2` or `legacy` |
+| `SERIAL_HUB_MCP_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/local` | local v2 dir |
+| `SERIAL_HUB_MCP_REMOTE_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/remote` | remote v1 host cache dir |
+| `SERIAL_HUB_MCP_STORE_RETAIN_BYTES` | 512 MiB/connection | per-connection disk cap; `<=0` disables byte eviction |
+| `SERIAL_HUB_MCP_STORE_SEGMENT_BYTES` | 16 MiB | segment size |
+| `SERIAL_HUB_MCP_STORE_BLOCK_BYTES` | 1 MiB | block index granularity |
+| `SERIAL_HUB_MCP_STORE_FLUSH_MS` | 500 | batching interval |
+
+v2 covers both local ports and the hub-mcp-side log cache for remote v1 sessions. The remote
+hub-server's own ring/capture is unchanged. Old JSONL is not imported automatically; use
+`legacy` to query it.
+
 ## Design
 
 - [Hub architecture](docs/hub-architecture.md) — early layering notes. The protocol doc wins

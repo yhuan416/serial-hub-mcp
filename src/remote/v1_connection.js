@@ -7,6 +7,7 @@
 import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
+import { dumpsDir } from "../dump_catalog.js";
 import crypto from "node:crypto";
 
 import { ByteRing } from "../hub-server/ring.js";
@@ -712,11 +713,12 @@ export class V1Connection {
     this.pending = new Map();
     this.nextId = 1;
     this.helloWait = null;
+    this.hostStore = opts.hostStore || null;
     this.cache = new CaptureCache({
       connectionId: this.id,
       port: this.port,
       ringBytes: opts.ringBytes,
-      maxEntries: opts.maxEntries,
+      maxEntries: opts.hostStore ? Math.min(opts.maxEntries ?? 5000, 5000) : opts.maxEntries,
       maxBytes: opts.maxBytes,
     });
     this.rxCursor = 0;
@@ -904,16 +906,19 @@ export class V1Connection {
     const startOffset = sub.start?.offset || 0;
     const startSeq = sub.start?.seq || 0;
     if (!sameCapture) {
+      this.hostStore?.unregister(this.id);
       if (this.spool) {
         this.spool.close();
         this.spool = null;
       }
       this.cache.resetBase(startOffset, startSeq);
       this.rxCursor = startOffset;
-      const key = Buffer.from(`${this.endpoint}|${this.port}`).toString("base64url").slice(0, 24);
-      pruneCaptureDirs(path.join(this.cacheDir, key), 16);
-      this.spool = new CacheSpool({ dir: path.join(this.cacheDir, key, String(sub.capture_id)) });
-      this.cache.attachSpool(this.spool);
+      if (!this.hostStore) {
+        const key = Buffer.from(`${this.endpoint}|${this.port}`).toString("base64url").slice(0, 24);
+        pruneCaptureDirs(path.join(this.cacheDir, key), 16);
+        this.spool = new CacheSpool({ dir: path.join(this.cacheDir, key, String(sub.capture_id)) });
+        this.cache.attachSpool(this.spool);
+      }
     } else if (this.cache.newestOffset < startOffset) {
       this.cache.markGap(startOffset);
     }
@@ -1161,6 +1166,7 @@ export class V1Connection {
       if (!p) return;
       if (p.flags & FLAG_GAP) {
         this.cache.markGap(p.offset);
+        this.hostStore?.unregister(this.id);
         return;
       }
       if (!(p.flags & FLAG_BATCH)) {
@@ -1169,6 +1175,7 @@ export class V1Connection {
       }
       this.cache.addBatch(p.offset, p.ts, p.data);
       this.bytesIn += p.data.length;
+      this.hostStore?.addData(this.id, p.data, p.ts);
       this._emitData({ dir: "rx", ts: p.ts || Date.now(), chunk: p.data });
       return;
     }
@@ -1366,6 +1373,35 @@ export class V1Connection {
         preview: slice.data.subarray(Math.max(0, slice.data.length - 1536)).toString("utf8"),
       };
     }
+    if (this.hostStore) {
+      const q = await this.hostStore.query({
+        connection_id: this.id,
+        dir: opts.dir,
+        seq_from: opts.seq_from,
+        seq_to: opts.seq_to,
+        time_from: opts.time_from,
+        time_to: opts.time_to,
+        limit: 1_000_000,
+        order: "asc",
+      });
+      const data = Buffer.concat(q.entries.map((e) => Buffer.from(e.hex || "", "hex")));
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      if (opts.append) fs.appendFileSync(file, data);
+      else fs.writeFileSync(file, data);
+      return {
+        connection_id: this.id,
+        transport: "remote",
+        source: "host-cache",
+        index: "seq",
+        file,
+        bytes: data.length,
+        lines: q.count,
+        first_seq: q.entries[0]?.seq ?? null,
+        last_seq: q.entries[q.entries.length - 1]?.seq ?? null,
+        eof: true,
+        preview: data.subarray(Math.max(0, data.length - 1536)).toString("utf8"),
+      };
+    }
     const exported = this.cache.export({
       path: file,
       dir: opts.dir,
@@ -1419,6 +1455,7 @@ export class V1Connection {
     if (res && Number.isFinite(res.tx_log_seq)) {
       this.cache.addTx(res.tx_log_seq, res.tx_offset, data);
     }
+    this.hostStore?.addTx(this.id, data);
     this._emitData({ dir: "tx", ts: Date.now(), chunk: data });
     return data.length;
   }
@@ -1505,7 +1542,7 @@ export class V1Connection {
       rx_dropped: 0,
       dtr: this.dtr,
       rts: this.rts,
-      current_partial_line: null,
+      current_partial_line: this.hostStore ? this.hostStore.currentPartial(this.id) : null,
       error: this.lastError,
     };
   }
@@ -1525,6 +1562,7 @@ export class V1Connection {
       this.reconnectTimer = null;
     }
     this._stopTimers();
+    this.hostStore?.unregister(this.id);
     if (this.spool) {
       this.spool.close();
       this.spool = null;
@@ -1541,24 +1579,77 @@ export class V1LogStore {
   constructor(conn) {
     this.conn = conn;
     this.cache = conn.cache;
+    this.hostStore = conn.hostStore || null;
     this.id = conn.id;
     this.config = conn.config || {};
   }
 
   async query(opts = {}) {
-    return this.cache.query(opts);
+    if (!this.hostStore) return this.cache.query(opts);
+    const r = await this.hostStore.query({ ...opts, connection_id: this.id });
+    return {
+      ...r,
+      transport: "remote",
+      source: "host-cache",
+      authoritative: false,
+      storage: "host-cache",
+      time_source: "ntp",
+      time_synced: true,
+      time_base_ms: 0,
+    };
   }
 
   async stats() {
-    return this.cache.stats();
+    if (!this.hostStore) return this.cache.stats();
+    const st = this.hostStore.stats(this.id);
+    const c = st.connections.find((x) => x.connection_id === this.id) || {};
+    const ring = this.cache.ring;
+    return {
+      connection_id: this.id,
+      transport: "remote",
+      source: "host-cache",
+      total: c.total || 0,
+      count: c.total || 0,
+      memory: 0,
+      disk: c.total || 0,
+      earliest_seq: c.earliest_seq ?? null,
+      latest_seq: c.latest_seq ?? null,
+      ram_earliest_seq: c.earliest_seq ?? null,
+      ram_latest_seq: c.latest_seq ?? null,
+      ram_count: 0,
+      bytes: c.disk_bytes || 0,
+      storage: "host-cache",
+      gaps: this.cache.gaps,
+      ring: {
+        bytes: ring.capacity,
+        used: ring.used,
+        start_offset: ring.startOffset,
+        end_offset: ring.endOffset,
+        dropped_bytes: ring.droppedBytes,
+      },
+      time_range: c.time_range || null,
+      dir: c.dir || null,
+      partitions: c.partitions || 0,
+      disk_bytes: c.disk_bytes || 0,
+      evicted_lines: c.evicted_lines || 0,
+      time_source: "ntp",
+      time_synced: true,
+      time_base_ms: 0,
+    };
   }
 
   async clear(_id, opts) {
+    this.hostStore?.clear(this.id);
     return this.cache.clear(opts);
   }
 
   async export(opts = {}) {
-    return this.cache.export(opts);
+    if (!this.hostStore) return this.cache.export(opts);
+    const file =
+      opts.path ||
+      opts.file ||
+      path.join(opts.out_dir || dumpsDir(), `export-${this.id}-${Date.now()}.log`);
+    return this.conn.dumpToFile({ ...opts, file });
   }
 
   async sync(opts = {}) {
@@ -1586,6 +1677,17 @@ export class V1LogStore {
     for (const dir of dirs) {
       const known = Number.isFinite(Number(state[dir]));
       const file = path.join(root, `${dir}.log`);
+      if (this.hostStore) {
+        const exported = await this.conn.dumpToFile({
+          dir,
+          seq_from: known ? Number(state[dir]) + 1 : undefined,
+          path: file,
+          append: known && fs.existsSync(file),
+        });
+        if (exported.last_seq != null) state[dir] = exported.last_seq;
+        files.push({ dir, ...exported });
+        continue;
+      }
       const exported = this.cache.export({
         dir,
         seq_from: known ? Number(state[dir]) + 1 : undefined,
@@ -1607,7 +1709,7 @@ export class V1LogStore {
   addTx() {}
   unregister() {}
   currentPartial() {
-    return null;
+    return this.hostStore ? this.hostStore.currentPartial(this.id) : null;
   }
 }
 

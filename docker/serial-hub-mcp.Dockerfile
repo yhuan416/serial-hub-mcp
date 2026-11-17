@@ -3,7 +3,7 @@
 #
 # docker build -f docker/serial-hub-mcp.Dockerfile -t serial-hub-mcp:latest .
 
-FROM node:24-trixie-slim
+FROM node:22-trixie-slim
 
 ENV NODE_ENV=production \
     SERIAL_HUB_MCP_HTTP=1 \
@@ -13,6 +13,9 @@ ENV NODE_ENV=production \
     XDG_CACHE_HOME=/data \
     SERIAL_HUB_MCP_REMOTES_FILE=/config/remotes.json \
     SERIAL_HUB_MCP_LOGS_DIR=/data/logs \
+    SERIAL_HUB_MCP_STORE=v2 \
+    SERIAL_HUB_MCP_STORE_DIR=/data/store/local \
+    SERIAL_HUB_MCP_REMOTE_STORE_DIR=/data/store/remote \
     SERIAL_HUB_MCP_DUMPS_DIR=/data/dumps \
     SERIAL_HUB_MCP_SYNC_DIR=/data/remote-sync \
     SERIAL_HUB_MCP_V1_CACHE_DIR=/data/v1-cache \
@@ -33,7 +36,7 @@ RUN npm ci --omit=dev || (apt-get update \
 COPY src ./src
 COPY CHANGELOG.md ./CHANGELOG.md
 
-RUN mkdir -p /data/logs /data/dumps /data/remote-sync /data/v1-cache /data/profiles /config \
+RUN mkdir -p /data/logs /data/store/local /data/store/remote /data/dumps /data/remote-sync /data/v1-cache /data/profiles /config \
     && chown -R node:node /data /config
 USER node
 
