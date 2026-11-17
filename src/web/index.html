@@ -1,0 +1,1468 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>serial-hub-mcp · 串口调试</title>
+    <link rel="stylesheet" href="/vendor/xterm.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0e1116;
+        --panel: #151b23;
+        --panel-2: #1b232d;
+        --border: #2a3644;
+        --text: #d7dee8;
+        --muted: #8593a6;
+        --rx: #62d394;
+        --tx: #6aa9ff;
+        --err: #ff6b6b;
+        --accent: #f0b429;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.5 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        height: 100dvh;
+      }
+      header.top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        flex: none;
+      }
+      header.top h1 {
+        font-size: 15px;
+        margin: 0;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex: none;
+      }
+      .dot.on {
+        background: var(--rx);
+        box-shadow: 0 0 6px var(--rx);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small {
+        font-size: 12px;
+      }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #3c4c60;
+      }
+      button:active {
+        transform: translateY(1px);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .banner {
+        display: none;
+        padding: 6px 16px;
+        background: rgba(255, 107, 107, 0.12);
+        color: var(--err);
+        border-bottom: 1px solid rgba(255, 107, 107, 0.35);
+        font-size: 12.5px;
+        flex: none;
+      }
+      .banner.show {
+        display: block;
+      }
+      main {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .tabs {
+        flex: none;
+        display: flex;
+        gap: 4px;
+        padding: 6px 12px 0;
+        overflow-x: auto;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        max-width: 1240px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .tabs[hidden] {
+        display: none;
+      }
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 14px;
+        border: 1px solid transparent;
+        border-bottom: none;
+        border-radius: 8px 8px 0 0;
+        background: transparent;
+        color: var(--muted);
+        white-space: nowrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12.5px;
+        position: relative;
+      }
+      .tab:hover {
+        background: var(--panel-2);
+        color: var(--text);
+      }
+      .tab.active {
+        background: #0b0f14;
+        color: var(--text);
+        border-color: var(--border);
+      }
+      .tab .tab-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--rx);
+        flex: none;
+      }
+      .tab.closed .tab-dot {
+        background: var(--muted);
+      }
+      .tab .unread {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex: none;
+        display: none;
+      }
+      .tab.unread .unread {
+        display: inline-block;
+      }
+      .terminal {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 1240px;
+        margin: 0 auto;
+        background: #0b0f14;
+        border-left: 1px solid var(--border);
+        border-right: 1px solid var(--border);
+      }
+      .terminal[hidden] {
+        display: none;
+      }
+      .toolbar {
+        flex: none;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel-2);
+        flex-wrap: wrap;
+      }
+      .toolbar .title {
+        font-weight: 600;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .toolbar .meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .toolbar .actions {
+        display: flex;
+        gap: 6px;
+      }
+      .log {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 8px 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-all;
+        background: #0b0f14;
+      }
+      .line .ts {
+        color: #63718a;
+      }
+      .line .dir {
+        font-weight: 700;
+      }
+      .line.rx .dir {
+        color: var(--rx);
+      }
+      .line.tx .dir {
+        color: var(--tx);
+      }
+      .line.sys .txt {
+        color: var(--muted);
+        font-style: italic;
+      }
+      .line.err .txt {
+        color: var(--err);
+      }
+      .hint {
+        flex: none;
+        color: var(--muted);
+        font-size: 12.5px;
+        padding: 4px 12px 10px;
+        font-style: italic;
+      }
+      .hint[hidden] {
+        display: none;
+      }
+      .send {
+        flex: none;
+        display: flex;
+        gap: 8px;
+        padding: 8px 12px;
+        border-top: 1px solid var(--border);
+        background: var(--panel-2);
+        flex-wrap: wrap;
+      }
+      .send input[type="text"] {
+        flex: 1;
+        min-width: 180px;
+        font: inherit;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: var(--text);
+        background: #0b0f14;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 10px;
+      }
+      .send select {
+        font: inherit;
+        color: var(--text);
+        background: #0b0f14;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+      }
+      .empty {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: var(--muted);
+        padding: 40px 20px;
+      }
+      .empty[hidden] {
+        display: none;
+      }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(5, 8, 12, 0.78);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      .overlay.hidden {
+        display: none;
+      }
+      .overlay form {
+        width: min(420px, 92vw);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .overlay h2 {
+        margin: 0 0 6px;
+        font-size: 16px;
+      }
+      .overlay p {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .overlay input {
+        width: 100%;
+        font: inherit;
+        color: var(--text);
+        background: #0b0f14;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 12px;
+      }
+      .mode-group {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .mode-btn {
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 4px 12px;
+      }
+      .mode-btn.active {
+        background: #0b0f14;
+        color: var(--text);
+      }
+      .views {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+      }
+      .view {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .view[hidden] {
+        display: none;
+      }
+      .view-term {
+        background: #0b0f14;
+      }
+      .term-stack {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        margin: 4px 6px;
+      }
+      .term-host {
+        position: absolute;
+        inset: 0;
+      }
+      .term-host[hidden] {
+        display: none;
+      }
+      .term-host .xterm {
+        height: 100%;
+      }
+      @media (max-width: 640px) {
+        .tabs {
+          padding: 6px 8px 0;
+        }
+        .tab {
+          padding: 6px 10px;
+        }
+        .toolbar {
+          gap: 6px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <span class="dot" id="live-dot"></span>
+      <h1>serial-hub-mcp</h1>
+      <span class="muted small" id="conn-count">0 个连接</span>
+      <span class="spacer"></span>
+      <span class="muted small" id="clock"></span>
+      <button id="token-btn" class="small" title="设置访问令牌">令牌</button>
+    </header>
+    <div class="banner" id="banner"></div>
+    <main>
+      <nav class="tabs" id="tabs" hidden></nav>
+      <section class="terminal" id="terminal" hidden>
+        <div class="toolbar">
+          <span class="title" id="active-title"></span>
+          <span class="meta" id="active-meta"></span>
+          <span class="spacer"></span>
+          <span class="mode-group">
+            <button type="button" class="mode-btn active" id="mode-term" data-mode="term">终端</button>
+            <button type="button" class="mode-btn" id="mode-log" data-mode="log">日志</button>
+          </span>
+          <span class="actions group-term">
+            <label class="small muted"
+              >Enter
+              <select id="enter-mode" title="Enter 发送的换行">
+                <option value="cr">CR</option>
+                <option value="crlf">CRLF</option>
+                <option value="lf">LF</option>
+              </select>
+            </label>
+            <label class="small muted"
+              >退格
+              <select id="backspace-mode" title="Backspace 发送的字节">
+                <option value="del">DEL 0x7f</option>
+                <option value="bs">BS 0x08</option>
+              </select>
+            </label>
+            <button type="button" id="term-clear-btn">清屏</button>
+          </span>
+          <span class="actions group-log" hidden>
+            <button type="button" id="older-btn" title="从服务端缓存加载更早的数据">更早</button>
+            <button type="button" id="download-btn" title="导出服务端缓存为文件">下载</button>
+            <button type="button" id="pause-btn" title="暂停/继续接收显示">暂停</button>
+            <button type="button" id="clear-btn">清屏</button>
+          </span>
+        </div>
+        <div class="views">
+          <div class="view view-log" id="view-log" hidden>
+            <div class="log" id="log" role="log" aria-live="polite"></div>
+            <div class="hint" id="hint">等待数据…</div>
+            <form class="send" id="send-form">
+              <input
+                type="text"
+                id="send-input"
+                placeholder="输入要发送的内容，Enter 发送"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <select id="send-newline" title="发送时追加的换行">
+                <option value="crlf">CRLF</option>
+                <option value="lf">LF</option>
+                <option value="none">无换行</option>
+              </select>
+              <button type="submit" id="send-btn">发送</button>
+            </form>
+          </div>
+          <div class="view view-term" id="view-term">
+            <div class="term-stack" id="term-stack"></div>
+          </div>
+        </div>
+      </section>
+      <div class="empty" id="empty">
+        还没有打开的串口。<br />
+        用 MCP 工具 <code>open</code> 打开一个串口，这里会自动出现。
+      </div>
+    </main>
+
+    <div class="overlay hidden" id="token-overlay">
+      <form id="token-form">
+        <h2>需要访问令牌</h2>
+        <p>服务设置了 SERIAL_HUB_MCP_HTTP_TOKEN，请输入 Bearer token。</p>
+        <input type="password" id="token-input" placeholder="token" autocomplete="off" />
+        <button type="submit">保存并重试</button>
+      </form>
+    </div>
+
+    <script type="module">
+      import { Terminal } from "/vendor/xterm.mjs";
+      import { FitAddon } from "/vendor/addon-fit.mjs";
+
+      (() => {
+        const TOKEN_KEY = "serial-hub-mcp-token";
+        const MAX_LINES = 10000;
+        const MAX_HISTORY = 5000;
+        const MAX_DOM = MAX_LINES + MAX_HISTORY;
+        const HISTORY_LIMIT = 500;
+        const tabsEl = document.getElementById("tabs");
+        const terminalEl = document.getElementById("terminal");
+        const viewLogEl = document.getElementById("view-log");
+        const viewTermEl = document.getElementById("view-term");
+        const termStackEl = document.getElementById("term-stack");
+        const modeTermBtn = document.getElementById("mode-term");
+        const modeLogBtn = document.getElementById("mode-log");
+        const logActionsEl = document.querySelector(".group-log");
+        const termActionsEl = document.querySelector(".group-term");
+        const enterModeEl = document.getElementById("enter-mode");
+        const backspaceModeEl = document.getElementById("backspace-mode");
+        const termClearBtn = document.getElementById("term-clear-btn");
+        const emptyEl = document.getElementById("empty");
+        const bannerEl = document.getElementById("banner");
+        const countEl = document.getElementById("conn-count");
+        const dotEl = document.getElementById("live-dot");
+        const clockEl = document.getElementById("clock");
+        const logEl = document.getElementById("log");
+        const hintEl = document.getElementById("hint");
+        const titleEl = document.getElementById("active-title");
+        const metaEl = document.getElementById("active-meta");
+        const pauseBtn = document.getElementById("pause-btn");
+        const clearBtn = document.getElementById("clear-btn");
+        const olderBtn = document.getElementById("older-btn");
+        const downloadBtn = document.getElementById("download-btn");
+        const sendForm = document.getElementById("send-form");
+        const sendInput = document.getElementById("send-input");
+        const sendNewline = document.getElementById("send-newline");
+        const sendBtn = document.getElementById("send-btn");
+        const overlay = document.getElementById("token-overlay");
+        const tokenInput = document.getElementById("token-input");
+
+        /** @type {Map<string, any>} */
+        const conns = new Map();
+        let activeId = null;
+        let lastTabSig = "";
+        let tokenPrompted = false;
+        let refreshing = false;
+
+        function token() {
+          return localStorage.getItem(TOKEN_KEY) || "";
+        }
+
+        function authHeaders() {
+          const t = token();
+          return t ? { Authorization: `Bearer ${t}` } : {};
+        }
+
+        function showTokenPrompt() {
+          if (tokenPrompted) return;
+          tokenPrompted = true;
+          overlay.classList.remove("hidden");
+          tokenInput.focus();
+        }
+
+        function showBanner(msg) {
+          bannerEl.textContent = msg || "";
+          bannerEl.classList.toggle("show", Boolean(msg));
+        }
+
+        async function api(path, opts = {}) {
+          const res = await fetch(path, {
+            ...opts,
+            headers: {
+              ...(opts.body ? { "content-type": "application/json" } : {}),
+              ...authHeaders(),
+              ...(opts.headers || {}),
+            },
+          });
+          if (res.status === 401) {
+            showTokenPrompt();
+            throw new Error("需要访问令牌");
+          }
+          let data = null;
+          try {
+            data = await res.json();
+          } catch (_) {
+            /* non-json */
+          }
+          if (!res.ok || (data && data.ok === false)) {
+            const msg =
+              (data && data.error && data.error.message) || `${res.status} ${res.statusText}`;
+            throw new Error(msg);
+          }
+          return data ? (data.response ?? data) : {};
+        }
+
+        function fmtBytes(n) {
+          n = Number(n) || 0;
+          if (n < 1024) return `${n} B`;
+          if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+          return `${(n / 1024 / 1024).toFixed(2)} MiB`;
+        }
+
+        function fmtTs(ts) {
+          const d = new Date(Number.isFinite(ts) ? ts : Date.now());
+          const hh = String(d.getHours()).padStart(2, "0");
+          const mm = String(d.getMinutes()).padStart(2, "0");
+          const ss = String(d.getSeconds()).padStart(2, "0");
+          const ms = String(d.getMilliseconds()).padStart(3, "0");
+          return `${hh}:${mm}:${ss}.${ms}`;
+        }
+
+        function cleanText(s) {
+          return String(s ?? "")
+            .replace(/\r\n?/g, "\n")
+            .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+        }
+
+        function frameText(conn) {
+          const c = (conn && conn.config) || {};
+          const bits = c.data_bits ?? 8;
+          const parity = c.parity === "even" ? "E" : c.parity === "odd" ? "O" : "N";
+          const stop = c.stop_bits ?? 1;
+          const baud = c.baud_rate ?? "";
+          const transport = conn.transport || "serial";
+          return `${baud} ${bits}${parity}${stop} · ${transport}`;
+        }
+
+        function tabName(conn) {
+          if (!conn) return "?";
+          return conn.port || (conn.config && conn.config.port_id) || conn.connection_id.slice(0, 8);
+        }
+
+        // ── 终端（xterm）──────────────────────────────────────
+        function ensureTerm(entry) {
+          if (entry.term) return;
+          const el = document.createElement("div");
+          el.className = "term-host";
+          el.hidden = false;
+          termStackEl.appendChild(el);
+          const term = new Terminal({
+            convertEol: false,
+            cursorBlink: true,
+            scrollback: 5000,
+            fontSize: 13,
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+            theme: {
+              background: "#0b0f14",
+              foreground: "#d7dee8",
+              cursor: "#f0b429",
+              selectionBackground: "#2a3644",
+            },
+          });
+          const fit = new FitAddon();
+          term.loadAddon(fit);
+          term.open(el);
+          term.onData((data) => queueInput(entry, data));
+          entry.term = term;
+          entry.termEl = el;
+          entry.fitAddon = fit;
+          if (entry.termBuffer) {
+            term.write(entry.termBuffer);
+            entry.termBuffer = "";
+          }
+        }
+
+        function termWrite(entry, text) {
+          if (!text) return;
+          if (entry.term) {
+            entry.term.write(text);
+            return;
+          }
+          entry.termBuffer = (entry.termBuffer || "") + text;
+          if (entry.termBuffer.length > 1024 * 1024) {
+            entry.termBuffer = entry.termBuffer.slice(-512 * 1024);
+          }
+        }
+
+        function fitTerm(entry) {
+          if (!entry || !entry.term || !entry.fitAddon) return;
+          if (entry.id !== activeId || entry.mode === "log" || viewTermEl.hidden) return;
+          try {
+            entry.fitAddon.fit();
+          } catch (_) {
+            /* hidden/zero size */
+          }
+        }
+
+        function mapInput(data) {
+          let s = data;
+          const enter = enterModeEl.value;
+          if (enter === "crlf") s = s.replace(/\r(?!\n)/g, "\r\n");
+          else if (enter === "lf") s = s.replace(/\r\n?/g, "\n");
+          if (backspaceModeEl.value === "bs") s = s.replace(/\x7f/g, "\x08");
+          return s;
+        }
+
+        function queueInput(entry, data) {
+          const mapped = mapInput(data);
+          if (!mapped) return;
+          entry.inputQueue += mapped;
+          if (entry.inputTimer) return;
+          entry.inputTimer = setTimeout(() => {
+            entry.inputTimer = null;
+            void flushInput(entry);
+          }, 10);
+        }
+
+        async function flushInput(entry) {
+          if (entry.sendingInput) return;
+          entry.sendingInput = true;
+          try {
+            while (entry.inputQueue) {
+              const data = entry.inputQueue.slice(0, 4096);
+              entry.inputQueue = entry.inputQueue.slice(4096);
+              await api("/api/input", {
+                method: "POST",
+                body: JSON.stringify({ connection_id: entry.id, data, encoding: "utf8" }),
+              });
+            }
+          } catch (err) {
+            entry.inputQueue = "";
+            termWrite(entry, `\r\n\x1b[31m[输入失败: ${err.message}]\x1b[0m\r\n`);
+          } finally {
+            entry.sendingInput = false;
+            if (entry.inputQueue) queueMicrotask(() => void flushInput(entry));
+          }
+        }
+
+        function applyMode(entry, focus) {
+          if (!entry) return;
+          const termMode = entry.mode !== "log";
+          viewTermEl.hidden = !termMode;
+          viewLogEl.hidden = termMode;
+          termActionsEl.hidden = !termMode;
+          logActionsEl.hidden = termMode;
+          modeTermBtn.classList.toggle("active", termMode);
+          modeLogBtn.classList.toggle("active", !termMode);
+          for (const e of conns.values()) {
+            if (e.termEl) e.termEl.hidden = !(e.id === activeId && termMode);
+          }
+          if (entry.id !== activeId) return;
+          if (termMode) {
+            ensureTerm(entry);
+            if (entry.termEl) entry.termEl.hidden = false;
+            ensureLogStream(entry);
+            requestAnimationFrame(() => {
+              if (entry.id !== activeId || entry.mode === "log") return;
+              fitTerm(entry);
+              if (focus && entry.term) entry.term.focus();
+            });
+          } else {
+            renderAll(entry);
+            ensureLogStream(entry);
+            if (focus) sendInput.focus();
+          }
+        }
+
+        function setMode(mode) {
+          const entry = activeEntry();
+          if (!entry) return;
+          entry.mode = mode === "log" ? "log" : "term";
+          applyMode(entry, true);
+        }
+
+        function handleTermSse(entry, block) {
+          let event = null;
+          const dataLines = [];
+          for (const raw of block.split("\n")) {
+            if (raw.startsWith("event:")) event = raw.slice(6).trim();
+            else if (raw.startsWith("data:")) dataLines.push(raw.slice(5).trim());
+          }
+          if (!event || !dataLines.length) return;
+          let payload = null;
+          try {
+            payload = JSON.parse(dataLines.join("\n"));
+          } catch (_) {
+            payload = null;
+          }
+          if (event === "hello") {
+            entry.status = payload && payload.status ? payload.status : entry.status;
+            entry.closed = false;
+            if (entry.id === activeId) updateMeta(entry);
+          } else if (event === "data") {
+            termWrite(entry, (payload && payload.text) || "");
+          } else if (event === "closed") {
+            entry.closed = true;
+            termWrite(entry, "\r\n\x1b[31m[连接已关闭]\x1b[0m\r\n");
+            if (entry.id === activeId) updateMeta(entry);
+            if (entry.termAc) entry.termAc.abort();
+          } else if (event === "overflow") {
+            termWrite(entry, "\r\n\x1b[33m[终端读取过慢，正在重连…]\x1b[0m\r\n");
+            entry.termForceReconnect = true;
+          } else if (event === "error") {
+            const msg =
+              (payload && payload.error && payload.error.message) ||
+              (payload && payload.message) ||
+              "终端流错误";
+            termWrite(entry, `\r\n\x1b[31m[${msg}]\x1b[0m\r\n`);
+          }
+        }
+
+        async function openTermStream(entry) {
+          if (entry.termAc) {
+            try {
+              entry.termAc.abort();
+            } catch (_) {}
+          }
+          const ac = new AbortController();
+          entry.termAc = ac;
+          while (!ac.signal.aborted) {
+            if (conns.get(entry.id) !== entry) return;
+            try {
+              const res = await fetch(
+                `/api/terminal?connection_id=${encodeURIComponent(entry.id)}`,
+                { headers: authHeaders(), signal: ac.signal },
+              );
+              if (res.status === 401) {
+                showTokenPrompt();
+                return;
+              }
+              if (res.status === 404) {
+                entry.closed = true;
+                termWrite(entry, "\r\n\x1b[31m[连接不存在]\x1b[0m\r\n");
+                return;
+              }
+              if (!res.ok) throw new Error(`终端流 ${res.status}`);
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              let buf = "";
+              while (!ac.signal.aborted) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                let idx;
+                while ((idx = buf.indexOf("\n\n")) >= 0) {
+                  const block = buf.slice(0, idx);
+                  buf = buf.slice(idx + 2);
+                  handleTermSse(entry, block);
+                  if (entry.termForceReconnect) {
+                    entry.termForceReconnect = false;
+                    try {
+                      await reader.cancel();
+                    } catch (_) {}
+                    break;
+                  }
+                }
+                if (entry.termForceReconnect) break;
+              }
+            } catch (err) {
+              if (ac.signal.aborted) return;
+            }
+            if (ac.signal.aborted) return;
+            if (conns.get(entry.id) !== entry) return;
+            await sleep(1500);
+          }
+        }
+
+        function closeLogStream(entry) {
+          if (!entry || !entry.logAc) return;
+          try {
+            entry.logAc.abort();
+          } catch (_) {}
+          entry.logAc = null;
+        }
+
+        function ensureLogStream(entry) {
+          if (!entry || entry.id !== activeId) return;
+          if (!entry.logAc) void openLogStream(entry);
+        }
+
+        function updateMeta(entry) {
+          if (!entry || entry.id !== activeId) return;
+          const st = entry.status || {};
+          titleEl.textContent = tabName(st);
+          const parts = [frameText(st)];
+          parts.push(`RX ${fmtBytes(st.bytes_in)}`);
+          parts.push(`TX ${fmtBytes(st.bytes_out)}`);
+          if (Number(st.rx_dropped) > 0) parts.push(`丢弃 ${fmtBytes(st.rx_dropped)}`);
+          if (st.reconnecting) parts.push("重连中");
+          if (st.error) parts.push(`错误 ${st.error}`);
+          if (entry.noise && entry.noise.bytes > 0) {
+            const b = entry.noise.byte;
+            const tag = Number.isFinite(b) ? ` (0x${Number(b).toString(16).padStart(2, "0")})` : "";
+            parts.push(`非文本 ${fmtBytes(entry.noise.bytes)}${tag}`);
+          }
+          if (entry.dropped > 0) parts.push(`已丢 ${entry.dropped} 块`);
+          if (entry.paused) parts.push("已暂停");
+          if (entry.closed) parts.push("已关闭");
+          metaEl.textContent = parts.join(" · ");
+        }
+
+        function updateHint(entry) {
+          if (!entry) return;
+          const empty = entry.history.length + entry.buffer.length === 0;
+          hintEl.hidden = !empty;
+          if (!empty) return;
+          if (entry.noise && entry.noise.bytes > 0) {
+            const b = entry.noise.byte;
+            const tag = Number.isFinite(b)
+              ? `0x${Number(b).toString(16).padStart(2, "0")}`
+              : "非文本";
+            hintEl.textContent = `只有非文本/空数据（${fmtBytes(entry.noise.bytes)}，${tag}），已折叠`;
+          } else {
+            hintEl.textContent = "等待数据…";
+          }
+        }
+
+        function updateSummary() {
+          const n = conns.size;
+          countEl.textContent = `${n} 个连接`;
+          dotEl.classList.toggle("on", n > 0);
+          emptyEl.hidden = n > 0;
+          terminalEl.hidden = n === 0;
+          tabsEl.hidden = n === 0;
+          updateHint(activeEntry());
+        }
+
+        function activeEntry() {
+          return activeId ? conns.get(activeId) || null : null;
+        }
+
+        function syncTabs() {
+          const sig = [...conns.keys()].join("|");
+          if (sig !== lastTabSig) {
+            lastTabSig = sig;
+            tabsEl.textContent = "";
+            for (const [id, entry] of conns) {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "tab";
+              btn.dataset.id = id;
+              const dot = document.createElement("span");
+              dot.className = "tab-dot";
+              const name = document.createElement("span");
+              name.className = "tab-name";
+              const unread = document.createElement("span");
+              unread.className = "unread";
+              name.textContent = tabName(entry.status);
+              btn.append(dot, name, unread);
+              btn.addEventListener("click", () => setActive(id, true));
+              tabsEl.appendChild(btn);
+              entry.tabEl = btn;
+            }
+          }
+          for (const [id, entry] of conns) {
+            if (!entry.tabEl) continue;
+            const name = entry.tabEl.querySelector(".tab-name");
+            if (name) name.textContent = tabName(entry.status);
+            entry.tabEl.classList.toggle("active", id === activeId);
+            entry.tabEl.classList.toggle("unread", entry.unread > 0 && id !== activeId);
+            entry.tabEl.classList.toggle(
+              "closed",
+              Boolean(entry.closed) || (entry.status && entry.status.open === false),
+            );
+          }
+        }
+
+        function lineNode(item) {
+          const line = document.createElement("div");
+          line.className = `line ${item.kind || item.dir || "sys"}`;
+          if (item.ts && item.dir) {
+            const ts = document.createElement("span");
+            ts.className = "ts";
+            ts.textContent = `[${fmtTs(item.ts)}] `;
+            const dir = document.createElement("span");
+            dir.className = "dir";
+            dir.textContent = item.dir === "tx" ? "TX " : "RX ";
+            const txt = document.createElement("span");
+            txt.className = "txt";
+            txt.textContent = item.text;
+            line.append(ts, dir, txt);
+          } else {
+            const txt = document.createElement("span");
+            txt.className = "txt";
+            txt.textContent = item.text;
+            line.append(txt);
+          }
+          return line;
+        }
+
+        function renderAll(entry) {
+          logEl.textContent = "";
+          const frag = document.createDocumentFragment();
+          for (const item of entry.history) frag.appendChild(lineNode(item));
+          for (const item of entry.buffer) frag.appendChild(lineNode(item));
+          logEl.appendChild(frag);
+          while (logEl.childElementCount > MAX_DOM) logEl.removeChild(logEl.firstChild);
+          entry.rendered = entry.buffer.length;
+          logEl.scrollTop = logEl.scrollHeight;
+          updateHint(entry);
+        }
+
+        function scheduleRender(entry) {
+          if (entry.raf) return;
+          entry.raf = requestAnimationFrame(() => {
+            entry.raf = 0;
+            if (entry.id !== activeId || entry.mode !== "log" || entry.paused) return;
+            const nearBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 48;
+            const frag = document.createDocumentFragment();
+            for (let i = entry.rendered; i < entry.buffer.length; i += 1) {
+              frag.appendChild(lineNode(entry.buffer[i]));
+            }
+            entry.rendered = entry.buffer.length;
+            logEl.appendChild(frag);
+            while (logEl.childElementCount > MAX_DOM) logEl.removeChild(logEl.firstChild);
+            if (nearBottom) logEl.scrollTop = logEl.scrollHeight;
+            hintEl.hidden = true;
+          });
+        }
+
+        function pushLine(entry, item) {
+          entry.buffer.push(item);
+          if (entry.buffer.length > MAX_LINES) {
+            const drop = Math.max(entry.buffer.length - MAX_LINES, 100);
+            entry.buffer.splice(0, drop);
+            entry.rendered = Math.max(0, entry.rendered - drop);
+            entry.dropped += drop;
+          }
+          if (entry.id === activeId && entry.mode === "log") updateHint(entry);
+          if (entry.id === activeId && entry.mode === "log" && !entry.paused) {
+            scheduleRender(entry);
+          } else if (entry.id !== activeId) {
+            entry.unread += 1;
+            if (entry.tabEl) entry.tabEl.classList.add("unread");
+          }
+        }
+
+        function setActive(id, focusInput) {
+          const entry = conns.get(id);
+          if (!entry) return;
+          if (activeId !== id) {
+            const prev = activeEntry();
+            if (prev) {
+              if (prev.raf) {
+                cancelAnimationFrame(prev.raf);
+                prev.raf = 0;
+              }
+              closeLogStream(prev);
+            }
+            activeId = id;
+            entry.unread = 0;
+            if (entry.tabEl) entry.tabEl.classList.remove("unread");
+            pauseBtn.textContent = entry.paused ? "继续" : "暂停";
+          }
+          syncTabs();
+          updateMeta(entry);
+          updateSummary();
+          applyMode(entry, Boolean(focusInput));
+        }
+
+        function removeEntry(id) {
+          const entry = conns.get(id);
+          if (!entry) return;
+          if (entry.termAc) {
+            try {
+              entry.termAc.abort();
+            } catch (_) {}
+            entry.termAc = null;
+          }
+          closeLogStream(entry);
+          if (entry.term) {
+            try {
+              entry.term.dispose();
+            } catch (_) {}
+            entry.term = null;
+          }
+          if (entry.termEl) {
+            entry.termEl.remove();
+            entry.termEl = null;
+          }
+          if (entry.inputTimer) clearTimeout(entry.inputTimer);
+          if (entry.raf) {
+            cancelAnimationFrame(entry.raf);
+            entry.raf = 0;
+          }
+          conns.delete(id);
+          if (activeId === id) {
+            activeId = null;
+            const next = conns.keys().next();
+            if (!next.done) setActive(next.value, false);
+            else {
+              logEl.textContent = "";
+              titleEl.textContent = "";
+              metaEl.textContent = "";
+            }
+          }
+          syncTabs();
+          updateSummary();
+        }
+
+        function handleSse(entry, block) {
+          let event = null;
+          const dataLines = [];
+          for (const raw of block.split("\n")) {
+            if (raw.startsWith("event:")) event = raw.slice(6).trim();
+            else if (raw.startsWith("data:")) dataLines.push(raw.slice(5).trim());
+          }
+          if (!event || !dataLines.length) return;
+          let payload = null;
+          try {
+            payload = JSON.parse(dataLines.join("\n"));
+          } catch (_) {
+            payload = null;
+          }
+          if (event === "hello") {
+            entry.status = payload && payload.status ? payload.status : entry.status;
+            entry.closed = false;
+            if (entry.id === activeId) updateMeta(entry);
+            if (entry.tabEl) entry.tabEl.classList.remove("closed");
+          } else if (event === "data") {
+            entry.closed = false;
+            const items = Array.isArray(payload && payload.items) ? payload.items : [payload];
+            let rx = 0;
+            let tx = 0;
+            for (const item of items) {
+              if (!item) continue;
+              const dir = item.dir === "tx" ? "tx" : "rx";
+              let text = cleanText(item.text);
+              if (item.truncated) text += `\n…(+${item.truncated} bytes)`;
+              pushLine(entry, { ts: item.ts, dir, text });
+              if (dir === "tx") tx += Number(item.bytes) || 0;
+              else rx += Number(item.bytes) || 0;
+            }
+            if (entry.status) {
+              entry.status.bytes_in = (entry.status.bytes_in || 0) + rx;
+              entry.status.bytes_out = (entry.status.bytes_out || 0) + tx;
+            }
+          } else if (event === "noise") {
+            const n = Number(payload && payload.bytes) || 0;
+            if (n > 0) {
+              entry.noise = entry.noise || { bytes: 0, byte: null };
+              entry.noise.bytes += n;
+              if (payload && Number.isFinite(payload.byte)) entry.noise.byte = payload.byte;
+              if (entry.id === activeId) {
+                updateMeta(entry);
+                updateHint(entry);
+              }
+            }
+          } else if (event === "closed") {
+            entry.closed = true;
+            pushLine(entry, {
+              kind: "sys",
+              text: `连接已关闭（${fmtTs(payload && payload.ts)}）`,
+            });
+            if (entry.id === activeId) updateMeta(entry);
+            if (entry.tabEl) entry.tabEl.classList.add("closed");
+            if (entry.logAc) entry.logAc.abort();
+          } else if (event === "overflow") {
+            pushLine(entry, { kind: "sys", text: "页面读取过慢，正在重连…" });
+            entry.forceReconnect = true;
+          } else if (event === "error") {
+            const msg =
+              (payload && payload.error && payload.error.message) ||
+              (payload && payload.message) ||
+              "实时流错误";
+            pushLine(entry, { kind: "err", text: msg });
+          }
+        }
+
+        function sleep(ms) {
+          return new Promise((r) => setTimeout(r, ms));
+        }
+
+        async function openLogStream(entry) {
+          if (entry.logAc) {
+            try {
+              entry.logAc.abort();
+            } catch (_) {}
+          }
+          const ac = new AbortController();
+          entry.logAc = ac;
+          while (!ac.signal.aborted) {
+            if (conns.get(entry.id) !== entry) return;
+            if (entry.id !== activeId) return;
+            try {
+              const res = await fetch(
+                `/api/stream?connection_id=${encodeURIComponent(entry.id)}`,
+                { headers: authHeaders(), signal: ac.signal },
+              );
+              if (res.status === 401) {
+                showTokenPrompt();
+                return;
+              }
+              if (res.status === 404) {
+                entry.closed = true;
+                updateMeta(entry);
+                return;
+              }
+              if (!res.ok) throw new Error(`实时流 ${res.status}`);
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              let buf = "";
+              while (!ac.signal.aborted) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                let idx;
+                while ((idx = buf.indexOf("\n\n")) >= 0) {
+                  const block = buf.slice(0, idx);
+                  buf = buf.slice(idx + 2);
+                  handleSse(entry, block);
+                  if (entry.forceReconnect) {
+                    entry.forceReconnect = false;
+                    try {
+                      await reader.cancel();
+                    } catch (_) {}
+                    break;
+                  }
+                }
+                if (entry.forceReconnect) break;
+              }
+            } catch (err) {
+              if (ac.signal.aborted) return;
+            }
+            if (ac.signal.aborted) return;
+            if (conns.get(entry.id) !== entry) return;
+            await sleep(1500);
+          }
+        }
+
+        function makeEntry(conn) {
+          const entry = {
+            id: conn.connection_id,
+            status: conn,
+            history: [],
+            buffer: [],
+            noise: null,
+            rendered: 0,
+            dropped: 0,
+            paused: false,
+            unread: 0,
+            closed: false,
+            mode: "term",
+            raf: 0,
+            forceReconnect: false,
+            tabEl: null,
+            term: null,
+            termEl: null,
+            fitAddon: null,
+            termAc: null,
+            termBuffer: "",
+            termForceReconnect: false,
+            logAc: null,
+            inputQueue: "",
+            inputTimer: null,
+            sendingInput: false,
+          };
+          conns.set(entry.id, entry);
+          return entry;
+        }
+
+        async function refresh() {
+          if (refreshing) return;
+          refreshing = true;
+          try {
+            const data = await api("/api/connections");
+            const list = Array.isArray(data.connections) ? data.connections : [];
+            const seen = new Set();
+            for (const conn of list) {
+              const id = conn.connection_id;
+              if (!id) continue;
+              seen.add(id);
+              let entry = conns.get(id);
+              if (!entry) {
+                entry = makeEntry(conn);
+                void openTermStream(entry);
+              } else {
+                entry.status = { ...(entry.status || {}), ...conn };
+                if (entry.id === activeId) updateMeta(entry);
+              }
+            }
+            for (const id of [...conns.keys()]) {
+              if (!seen.has(id)) removeEntry(id);
+            }
+            if (!activeId && conns.size) setActive(conns.keys().next().value, false);
+            syncTabs();
+            updateSummary();
+            showBanner("");
+          } catch (err) {
+            showBanner(err.message);
+          } finally {
+            refreshing = false;
+          }
+        }
+
+        async function loop() {
+          await refresh();
+          setTimeout(loop, 2000);
+        }
+
+        modeTermBtn.addEventListener("click", () => setMode("term"));
+        modeLogBtn.addEventListener("click", () => setMode("log"));
+        enterModeEl.addEventListener("change", () => {
+          const entry = activeEntry();
+          if (entry && entry.term) entry.term.focus();
+        });
+        backspaceModeEl.addEventListener("change", () => {
+          const entry = activeEntry();
+          if (entry && entry.term) entry.term.focus();
+        });
+        termClearBtn.addEventListener("click", () => {
+          const entry = activeEntry();
+          if (!entry) return;
+          entry.termBuffer = "";
+          if (entry.term) entry.term.clear();
+        });
+        window.addEventListener("resize", () => {
+          const entry = activeEntry();
+          if (entry && entry.mode === "term") fitTerm(entry);
+        });
+
+        pauseBtn.addEventListener("click", () => {
+          const entry = activeEntry();
+          if (!entry) return;
+          entry.paused = !entry.paused;
+          pauseBtn.textContent = entry.paused ? "继续" : "暂停";
+          if (!entry.paused) renderAll(entry);
+          updateMeta(entry);
+        });
+
+        clearBtn.addEventListener("click", () => {
+          const entry = activeEntry();
+          if (!entry) return;
+          if (entry.raf) {
+            cancelAnimationFrame(entry.raf);
+            entry.raf = 0;
+          }
+          entry.history = [];
+          entry.buffer = [];
+          entry.noise = null;
+          entry.rendered = 0;
+          entry.dropped = 0;
+          logEl.textContent = "";
+          hintEl.textContent = "等待数据…";
+          hintEl.hidden = false;
+        });
+
+        function oldestItem(entry) {
+          if (entry.history.length) return entry.history[0];
+          if (entry.buffer.length) return entry.buffer[0];
+          return null;
+        }
+
+        async function loadOlder() {
+          const entry = activeEntry();
+          if (!entry || entry.loadingHistory) return;
+          if (entry.history.length >= MAX_HISTORY) {
+            showBanner("已到本地历史上限，清屏后可重新加载");
+            return;
+          }
+          const room = Math.min(HISTORY_LIMIT, MAX_HISTORY - entry.history.length);
+          const params = new URLSearchParams({
+            connection_id: entry.id,
+            limit: String(room),
+          });
+          const oldest = oldestItem(entry);
+          if (entry.history.length && Number.isFinite(entry.history[0].seq)) {
+            params.set("before_seq", String(entry.history[0].seq));
+          } else if (oldest && Number.isFinite(oldest.ts)) {
+            params.set("before_ts", String(oldest.ts));
+          }
+          entry.loadingHistory = true;
+          olderBtn.disabled = true;
+          try {
+            const data = await api(`/api/history?${params.toString()}`);
+            const items = (Array.isArray(data.entries) ? data.entries : []).map((e) => ({
+              seq: e.seq,
+              ts: e.ts,
+              dir: e.dir === "tx" ? "tx" : "rx",
+              text: cleanText(e.text),
+            }));
+            const seen = new Set(entry.history.map((x) => x.seq).filter((x) => x != null));
+            const fresh = items.filter((x) => x.seq == null || !seen.has(x.seq));
+            if (!fresh.length) {
+              showBanner("没有更早的数据了");
+              return;
+            }
+            entry.history = fresh.concat(entry.history);
+            if (entry.id === activeId) {
+              const frag = document.createDocumentFragment();
+              for (const item of fresh) frag.appendChild(lineNode(item));
+              const beforeHeight = logEl.scrollHeight;
+              const beforeTop = logEl.scrollTop;
+              logEl.insertBefore(frag, logEl.firstChild);
+              logEl.scrollTop = beforeTop + (logEl.scrollHeight - beforeHeight);
+              while (logEl.childElementCount > MAX_DOM) logEl.removeChild(logEl.firstChild);
+              hintEl.hidden = true;
+            }
+            showBanner("");
+          } catch (err) {
+            showBanner(`加载历史失败：${err.message}`);
+          } finally {
+            entry.loadingHistory = false;
+            olderBtn.disabled = false;
+          }
+        }
+
+        async function download() {
+          const entry = activeEntry();
+          if (!entry) return;
+          downloadBtn.disabled = true;
+          try {
+            const r = await api("/api/dump", {
+              method: "POST",
+              body: JSON.stringify({ connection_id: entry.id }),
+            });
+            const path = r.download_path || `/dumps/${r.file_id}`;
+            const res = await fetch(path, { headers: authHeaders() });
+            if (!res.ok) throw new Error(`下载失败 ${res.status}`);
+            const blob = await res.blob();
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = r.file_id || "serial.log";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+            pushLine(entry, {
+              kind: "sys",
+              text: `已导出 ${r.bytes ?? blob.size} 字节到 ${r.file_id}`,
+            });
+            showBanner("");
+          } catch (err) {
+            showBanner(`导出失败：${err.message}`);
+          } finally {
+            downloadBtn.disabled = false;
+          }
+        }
+
+        olderBtn.addEventListener("click", () => void loadOlder());
+        downloadBtn.addEventListener("click", () => void download());
+
+        sendForm.addEventListener("submit", async (ev) => {
+          ev.preventDefault();
+          const entry = activeEntry();
+          if (!entry) return;
+          const text = sendInput.value;
+          const newline = sendNewline.value;
+          if (!text && newline === "none") return;
+          sendBtn.disabled = true;
+          try {
+            await api("/api/write", {
+              method: "POST",
+              body: JSON.stringify({
+                connection_id: entry.id,
+                data: text,
+                encoding: "utf8",
+                newline,
+              }),
+            });
+            sendInput.value = "";
+            showBanner("");
+          } catch (err) {
+            pushLine(entry, { kind: "err", text: `发送失败：${err.message}` });
+          } finally {
+            sendBtn.disabled = false;
+            sendInput.focus();
+          }
+        });
+
+        document.getElementById("token-form").addEventListener("submit", (ev) => {
+          ev.preventDefault();
+          const v = tokenInput.value.trim();
+          if (!v) return;
+          localStorage.setItem(TOKEN_KEY, v);
+          location.reload();
+        });
+        document.getElementById("token-btn").addEventListener("click", () => {
+          tokenPrompted = false;
+          tokenInput.value = token();
+          overlay.classList.remove("hidden");
+          tokenInput.focus();
+        });
+
+        setInterval(() => {
+          clockEl.textContent = fmtTs(Date.now()).slice(0, 12);
+          const entry = activeEntry();
+          if (entry) updateMeta(entry);
+        }, 500);
+        clockEl.textContent = fmtTs(Date.now()).slice(0, 12);
+
+        loop();
+      })();
+    </script>
+  </body>
+</html>

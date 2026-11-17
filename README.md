@@ -98,6 +98,23 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
   the serial ports.
 - The token is compared with a constant-time check and sent as `Authorization: Bearer <token>`.
 
+## Debug UI
+
+`--http` also serves a minimal serial monitor at `http://127.0.0.1:8787/`:
+
+- one tab per connection opened in this process (by MCP tools or by the page itself);
+- `终端 | 日志` views: a tty-like terminal (vendored xterm.js) sends keystrokes as typed, with ANSI/cursor/clear/scrollback, plus configurable Enter (CR/CRLF/LF) and Backspace (DEL/BS);
+- keyboard input bypasses the MCP per-connection queue, so typing is not blocked by an agent `receive`;
+- live RX/TX with millisecond timestamps, auto-scroll, pause and clear in the log view;
+- server-side data is coalesced over ~80ms so high-rate ports do not flood the page;
+- `更早` loads scrollback from the server cache, `下载` exports it to a file;
+- a send box per tab (text, with CR/LF/CRLF) using the same `write` semantics.
+
+The page itself is static and unauthenticated; `/api/*` requires the same Bearer token
+(the page prompts for it). Disable the UI with `SERIAL_HUB_MCP_HTTP_UI=0`.
+
+The page only sees connections in the same `--http` process; stdio servers have no page.
+
 ## Tools
 
 | Tool | Purpose |

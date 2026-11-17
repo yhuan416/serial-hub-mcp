@@ -251,6 +251,8 @@ export class CaptureCache {
     this.newestOffset = this.baseOffset;
     this.gaps = [];
     this.partial = null;
+    this.partialOffset = null;
+    this.maxPartialBytes = opts.maxPartialBytes || 64 * 1024;
     this.bytesIn = 0;
     this.waiters = new Set();
     this.spool = null;
@@ -269,10 +271,7 @@ export class CaptureCache {
         }
       }
       this.entries.sort((a, b) => a.seq - b.seq);
-      while (this.totalBytes > this.maxBytes && this.entries.length > 1) {
-        const gone = this.entries.shift();
-        this.totalBytes -= gone.bytes.length;
-      }
+      this._trimToLimits();
       this._rebuildRing();
     }
   }
@@ -309,13 +308,7 @@ export class CaptureCache {
     if (!added) return 0;
     this.entries.sort((a, b) => a.seq - b.seq);
     this.totalBytes = this.entries.reduce((n, e) => n + e.bytes.length, 0);
-    while (
-      this.entries.length > this.maxEntries ||
-      (this.totalBytes > this.maxBytes && this.entries.length > 1)
-    ) {
-      const gone = this.entries.shift();
-      this.totalBytes -= gone.bytes.length;
-    }
+    this._trimToLimits();
     this.lastSeq = Math.max(this.lastSeq, this.entries[this.entries.length - 1].seq);
     for (const e of this.entries) {
       if (e.dir === "rx")
@@ -334,6 +327,7 @@ export class CaptureCache {
     this.newestOffset = offset;
     this.gaps = [];
     this.partial = null;
+    this.partialOffset = null;
   }
 
   _wake() {
@@ -363,12 +357,74 @@ export class CaptureCache {
   markGap(offset) {
     const to = Number(offset) || 0;
     this.partial = null;
+    this.partialOffset = null;
     if (to > this.newestOffset) {
       this.gaps.push({ from: this.newestOffset, to });
       this.ring.resetAt(to);
       this.newestOffset = to;
     }
     this._wake();
+  }
+
+  /** 追加一条 RX 行（bytes 已含行尾）。 */
+  _pushRxLine(bytes, ts, offset) {
+    const seq = this.lastSeq + 1;
+    const entry = {
+      seq,
+      ts: Number(ts) || now(),
+      dir: "rx",
+      offset,
+      bytes: Buffer.from(bytes),
+    };
+    this.entries.push(entry);
+    this.totalBytes += entry.bytes.length;
+    this.lastSeq = seq;
+    if (this.spool) this.spool.append(entry);
+    return entry;
+  }
+
+  /**
+   * 追加残行。partial 超过 maxPartialBytes 时当作一条完整行落下，
+   * 避免没有 \n 的流让 partial 无限增长（旧实现每个 chunk 都要 concat 并重扫整个 partial）。
+   */
+  _appendPartial(slice, offset) {
+    if (!slice || slice.length === 0) return;
+    if (!this.partial || this.partial.length === 0) {
+      this.partial = Buffer.from(slice);
+      this.partialOffset = offset;
+      return;
+    }
+    if (this.partial.length + slice.length <= this.maxPartialBytes) {
+      this.partial = Buffer.concat([this.partial, slice]);
+      return;
+    }
+    this._pushRxLine(this.partial, now(), this.partialOffset);
+    this.partial = Buffer.from(slice);
+    this.partialOffset = offset;
+  }
+
+  /** 按条数/字节上限裁剪。按批删除，避免每来一行就 shift 整个数组（O(n²)）。 */
+  _trimToLimits() {
+    let drop = 0;
+    const overEntries = this.entries.length - this.maxEntries;
+    if (overEntries > 0) {
+      const batch = Math.max(1, Math.min(1000, Math.floor(this.maxEntries / 10)));
+      drop = Math.max(overEntries, batch);
+    }
+    if (this.totalBytes > this.maxBytes && this.entries.length > 1) {
+      const need = this.totalBytes - this.maxBytes;
+      let bytes = 0;
+      let n = 0;
+      while (n < this.entries.length - 1 && bytes < need) {
+        bytes += this.entries[n].bytes.length;
+        n += 1;
+      }
+      drop = Math.max(drop, n);
+    }
+    if (drop <= 0) return;
+    drop = Math.min(drop, this.entries.length - 1); // 至少留一条
+    for (let i = 0; i < drop; i += 1) this.totalBytes -= this.entries[i].bytes.length;
+    this.entries.splice(0, drop);
   }
 
   addBatch(offset, ts, bytes) {
@@ -382,32 +438,33 @@ export class CaptureCache {
       }
       this.newestOffset = Math.max(this.newestOffset, off + chunk.length);
       this.bytesIn += chunk.length;
+
+      let start = 0;
+      if (this.partial && this.partial.length) {
+        const partialLen = this.partial.length;
+        const nl = chunk.indexOf(0x0a);
+        if (nl < 0) {
+          this._appendPartial(chunk, off);
+        } else {
+          const lineOffset = this.partialOffset ?? off - partialLen;
+          const line = Buffer.concat([this.partial, chunk.subarray(0, nl + 1)]);
+          this.partial = null;
+          this.partialOffset = null;
+          this._pushRxLine(line, ts, lineOffset);
+          start = nl + 1;
+        }
+      }
+      while (start < chunk.length) {
+        const nl = chunk.indexOf(0x0a, start);
+        if (nl < 0) {
+          this._appendPartial(chunk.subarray(start), off + start);
+          break;
+        }
+        this._pushRxLine(chunk.subarray(start, nl + 1), ts, off + start);
+        start = nl + 1;
+      }
     }
-    const partialLen = this.partial ? this.partial.length : 0;
-    const buf = partialLen ? Buffer.concat([this.partial, chunk]) : chunk;
-    const base = off - partialLen;
-    let start = 0;
-    for (let i = 0; i < buf.length; i++) {
-      if (buf[i] !== 0x0a) continue;
-      const line = buf.subarray(start, i + 1);
-      const seq = this.lastSeq + 1;
-      this.entries.push({
-        seq,
-        ts: Number(ts) || now(),
-        dir: "rx",
-        offset: base + start,
-        bytes: Buffer.from(line),
-      });
-      this.totalBytes += line.length;
-      this.lastSeq = seq;
-      if (this.spool) this.spool.append(this.entries[this.entries.length - 1]);
-      start = i + 1;
-    }
-    while (this.totalBytes > this.maxBytes && this.entries.length > 1) {
-      const gone = this.entries.shift();
-      this.totalBytes -= gone.bytes.length;
-    }
-    this.partial = start < buf.length ? Buffer.from(buf.subarray(start)) : null;
+    this._trimToLimits();
     this._wake();
   }
 
@@ -432,13 +489,7 @@ export class CaptureCache {
     };
     this.entries.push(entry);
     this.totalBytes += entry.bytes.length;
-    while (
-      this.entries.length > this.maxEntries ||
-      (this.totalBytes > this.maxBytes && this.entries.length > 1)
-    ) {
-      const gone = this.entries.shift();
-      this.totalBytes -= gone.bytes.length;
-    }
+    this._trimToLimits();
     this.lastSeq = n;
     this.newestOffset = Math.max(this.newestOffset, off + entry.bytes.length);
     this.bytesIn += entry.bytes.length;
@@ -458,6 +509,7 @@ export class CaptureCache {
     };
     this.entries.push(entry);
     this.totalBytes += entry.bytes.length;
+    this._trimToLimits();
     this.lastSeq = Math.max(this.lastSeq, n);
     if (this.spool) this.spool.append(entry);
     this._wake();
@@ -678,6 +730,7 @@ export class V1Connection {
     this.ackTimer = null;
     this.pingTimer = null;
     this.info = null;
+    this.dataListeners = new Set(); // 实时数据订阅（web UI 用）
     this.mode = null;
     this.resumeLost = null;
     this.stateFile = opts.stateFile || defaultStateFile();
@@ -1116,6 +1169,7 @@ export class V1Connection {
       }
       this.cache.addBatch(p.offset, p.ts, p.data);
       this.bytesIn += p.data.length;
+      this._emitData({ dir: "rx", ts: p.ts || Date.now(), chunk: p.data });
       return;
     }
     if (type === T.EVENT) {
@@ -1294,7 +1348,9 @@ export class V1Connection {
     const file = opts.file || opts.path;
     const useOffset = Number.isFinite(opts.offset_from) || Number.isFinite(opts.offset_to);
     if (useOffset) {
-      const from = Number.isFinite(opts.offset_from) ? opts.offset_from : this.cache.ring.startOffset;
+      const from = Number.isFinite(opts.offset_from)
+        ? opts.offset_from
+        : this.cache.ring.startOffset;
       const end = Number.isFinite(opts.offset_to) ? opts.offset_to : this.cache.ring.endOffset;
       const slice = this.cache.readBytes(from, Math.max(0, end - from));
       fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -1363,6 +1419,7 @@ export class V1Connection {
     if (res && Number.isFinite(res.tx_log_seq)) {
       this.cache.addTx(res.tx_log_seq, res.tx_offset, data);
     }
+    this._emitData({ dir: "tx", ts: Date.now(), chunk: data });
     return data.length;
   }
 
@@ -1397,6 +1454,26 @@ export class V1Connection {
       session_id: this.sessionId,
       duration_ms: durationMs,
     });
+  }
+
+  /**
+   * 订阅本连接的实时数据。回调收到 {dir, ts, chunk} 或 {type:"closed", ts}。
+   * 返回退订函数。只做旁路通知，不影响缓存/日志/游标。
+   */
+  subscribe(fn) {
+    if (typeof fn !== "function") throw new Error("subscribe 需要回调函数");
+    this.dataListeners.add(fn);
+    return () => this.dataListeners.delete(fn);
+  }
+
+  _emitData(evt) {
+    for (const fn of this.dataListeners) {
+      try {
+        fn(evt);
+      } catch (_) {
+        /* 订阅者异常不影响链路 */
+      }
+    }
   }
 
   async flushInput() {
@@ -1456,6 +1533,7 @@ export class V1Connection {
       this.socket?.end();
     } catch (_) {}
     this._rejectPending(new Error("连接已关闭"));
+    this._emitData({ type: "closed", ts: Date.now() });
   }
 }
 

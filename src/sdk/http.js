@@ -7,10 +7,18 @@
 
 import http from "node:http";
 import fs from "node:fs";
+import nodePath from "node:path";
 import crypto from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 const DEFAULT_BODY_LIMIT = 4 * 1024 * 1024;
+
+// 自带页面只允许加载这几个 vendor 资源（xterm 相关），不做通用静态目录。
+const VENDOR_FILES = new Map([
+  ["/vendor/xterm.mjs", ["xterm.mjs", "text/javascript; charset=utf-8"]],
+  ["/vendor/addon-fit.mjs", ["addon-fit.mjs", "text/javascript; charset=utf-8"]],
+  ["/vendor/xterm.css", ["xterm.css", "text/css; charset=utf-8"]],
+]);
 
 function json(res, status, payload) {
   if (!res.headersSent) {
@@ -82,6 +90,9 @@ function safeEqual(a, b) {
  * @param {string[]} [opts.allowedOrigins]
  * @param {string} [opts.dumpsPath="/dumps/"]
  * @param {(fileId: string) => string|null} [opts.resolveDump]
+ * @param {string} [opts.webDir] 自带调试页面目录（提供 index.html）
+ * @param {(req, res, url:URL) => Promise<boolean>|boolean} [opts.apiHandler]
+ *   `/api/*` 处理器；由调用方完成路由，返回 false 表示未处理
  */
 export function createHttpServer(opts = {}) {
   const {
@@ -97,6 +108,8 @@ export function createHttpServer(opts = {}) {
     allowedOrigins,
     dumpsPath = "/dumps/",
     resolveDump,
+    webDir,
+    apiHandler,
   } = opts;
 
   if (typeof createServer !== "function") {
@@ -149,6 +162,57 @@ export function createHttpServer(opts = {}) {
         fs.createReadStream(file).pipe(res);
         return;
       }
+      // 自带调试页面：静态、免鉴权、不含密钥
+      if (
+        webDir &&
+        req.method === "GET" &&
+        (url.pathname === "/" || url.pathname === "/index.html")
+      ) {
+        const file = nodePath.join(webDir, "index.html");
+        let stat;
+        try {
+          stat = fs.statSync(file);
+        } catch {
+          return rpcError(res, 404, -32602, "ui not found");
+        }
+        if (!stat.isFile()) return rpcError(res, 404, -32602, "ui not found");
+        res.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-length": stat.size,
+          "cache-control": "no-cache",
+        });
+        fs.createReadStream(file).pipe(res);
+        return;
+      }
+
+      // vendor 静态资源（xterm）：免鉴权，白名单
+      if (webDir && req.method === "GET" && VENDOR_FILES.has(url.pathname)) {
+        const [name, type] = VENDOR_FILES.get(url.pathname);
+        const file = nodePath.join(webDir, "vendor", name);
+        let stat;
+        try {
+          stat = fs.statSync(file);
+        } catch {
+          return rpcError(res, 404, -32602, "vendor not found");
+        }
+        if (!stat.isFile()) return rpcError(res, 404, -32602, "vendor not found");
+        res.writeHead(200, {
+          "content-type": type,
+          "content-length": stat.size,
+          "cache-control": "no-cache",
+        });
+        fs.createReadStream(file).pipe(res);
+        return;
+      }
+
+      // Web UI 数据接口：与 MCP 共用 Bearer token
+      if (apiHandler && url.pathname.startsWith("/api/")) {
+        if (authorized && !authorized(req)) return rpcError(res, 401, -32001, "Unauthorized");
+        const handled = await apiHandler(req, res, url);
+        if (!handled) return rpcError(res, 404, -32601, `not found: ${url.pathname}`);
+        return;
+      }
+
       if (url.pathname !== path) return rpcError(res, 404, -32601, `not found: ${url.pathname}`);
       if (authorized && !authorized(req)) return rpcError(res, 401, -32001, "Unauthorized");
 
@@ -192,8 +256,9 @@ export async function runHttp(opts = {}) {
     server.listen(port, host, resolve);
   });
   const boundPort = server.address().port;
+  const ui = opts.webDir ? `；调试页面 http://${host}:${boundPort}/` : "";
   process.stderr.write(
-    `[${opts.name ?? "mcp"}] MCP server 启动（Streamable HTTP: http://${host}:${boundPort}${path}）\n`,
+    `[${opts.name ?? "mcp"}] MCP server 启动（Streamable HTTP: http://${host}:${boundPort}${path}${ui}）\n`,
   );
 
   if (opts.handleSignals !== false) {

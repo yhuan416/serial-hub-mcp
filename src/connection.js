@@ -44,12 +44,34 @@ class Connection {
     this.waiters = [];
     this.closed = false;
     this._pumpError = null;
+    this.dataListeners = new Set(); // 实时数据订阅（web UI 用）
     this.dtr = null; // 最近一次设置的 DTR 电平（null 表示未显式设置）
     this.rts = null; // 最近一次设置的 RTS 电平
 
     port.on("data", (chunk) => this._onData(chunk));
     port.on("error", (err) => this._onError(err));
     port.on("close", () => this._onClose());
+  }
+
+  // ── 实时数据订阅 ────────────────────────────────────────
+  /**
+   * 订阅本连接的实时数据。回调收到 {dir, ts, chunk} 或 {type:"closed", ts}。
+   * 返回退订函数。只做旁路通知，不影响日志/缓冲/游标。
+   */
+  subscribe(fn) {
+    if (typeof fn !== "function") throw new Error("subscribe 需要回调函数");
+    this.dataListeners.add(fn);
+    return () => this.dataListeners.delete(fn);
+  }
+
+  _emitData(evt) {
+    for (const fn of this.dataListeners) {
+      try {
+        fn(evt);
+      } catch (_) {
+        /* 订阅者异常不影响串口 */
+      }
+    }
   }
 
   // ── RX 泵 ──────────────────────────────────────────────
@@ -60,6 +82,9 @@ class Connection {
 
     // 喂给日志层（按行切分），独立于字节缓冲
     if (this.logStore) this.logStore.addData(this.id, chunk);
+
+    // 旁路：实时订阅者（web UI）拿到原始字节，不参与消费
+    this._emitData({ dir: "rx", ts: Date.now(), chunk });
 
     // 追加：push 新 chunk，常数时间，不拷贝旧数据
     this._chunks.push(chunk);
@@ -173,8 +198,13 @@ class Connection {
   }
 
   _onClose() {
+    if (this.closed) {
+      this._failWaiters(new Error("串口已关闭"));
+      return;
+    }
     this.closed = true;
     this._failWaiters(new Error("串口已关闭"));
+    this._emitData({ type: "closed", ts: Date.now() });
   }
 
   // ── 等待器：每个等待者持有一个 check()，满足或超时即 resolve ──
@@ -324,6 +354,7 @@ class Connection {
           if (drainErr) return reject(drainErr);
           // 一次 write 记一条 TX 日志（不切行）
           if (this.logStore) this.logStore.addTx(this.id, buf);
+          this._emitData({ dir: "tx", ts: Date.now(), chunk: buf });
           resolve(buf.length);
         });
       });
@@ -602,7 +633,10 @@ class Connection {
   }
 
   async close() {
-    this.closed = true;
+    if (!this.closed) {
+      this.closed = true;
+      this._emitData({ type: "closed", ts: Date.now() });
+    }
     if (this.logStore) this.logStore.unregister(this.id);
     return new Promise((resolve, reject) => {
       this.port.close((err) => {
@@ -727,6 +761,16 @@ class ConnectionManager {
 
   get(id) {
     return this.connections.get(id) || null;
+  }
+
+  /**
+   * 订阅某连接的实时数据（本地/远端统一入口）。
+   * 连接不存在或后端不支持时返回 null。
+   */
+  subscribe(id, fn) {
+    const conn = this.connections.get(id);
+    if (!conn || typeof conn.subscribe !== "function") return null;
+    return conn.subscribe(fn);
   }
 
   list() {

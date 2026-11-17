@@ -145,26 +145,22 @@ async function queryRemotePorts(remote) {
     timeout + 3000,
     `remote "${remote.name}" 连接`,
   );
-  try {
-    const list = Array.isArray(info && info.ports) ? info.ports : [];
-    const ports = list.map((p) => normalizeRemotePort(p, remote));
-    return {
-      ok: true,
-      source: "remote",
-      name: remote.name,
-      endpoint: remote.endpoint,
-      count: ports.length,
-      ports,
-      caps: info?.caps ?? null,
-      time: info?.time ?? null,
-      remote: {
-        fw_version: info?.fw_version ?? null,
-        board: info?.board ?? null,
-      },
-    };
-  } catch (err) {
-    throw err;
-  }
+  const list = Array.isArray(info && info.ports) ? info.ports : [];
+  const ports = list.map((p) => normalizeRemotePort(p, remote));
+  return {
+    ok: true,
+    source: "remote",
+    name: remote.name,
+    endpoint: remote.endpoint,
+    count: ports.length,
+    ports,
+    caps: info?.caps ?? null,
+    time: info?.time ?? null,
+    remote: {
+      fw_version: info?.fw_version ?? null,
+      board: info?.board ?? null,
+    },
+  };
 }
 
 async function listLocalPorts() {
@@ -640,7 +636,9 @@ export const connTools = (manager) => [
       start: z
         .enum(["cursor", "flush"])
         .optional()
-        .describe("cursor=从读游标接着收（默认，可能含游标后的旧字节）；flush=跳到当前最新字节，只收之后新到的，不清缓存"),
+        .describe(
+          "cursor=从读游标接着收（默认，可能含游标后的旧字节）；flush=跳到当前最新字节，只收之后新到的，不清缓存",
+        ),
       reset: z
         .enum(["none", "dtr", "rts"])
         .optional()
@@ -700,9 +698,17 @@ export const connTools = (manager) => [
       dir: z.enum(["rx", "tx"]).optional().describe("行方向，默认两边"),
       seq_from: z.number().int().optional().describe("起始 seq（含）"),
       seq_to: z.number().int().optional().describe("结束 seq（含）"),
-      time_from: z.number().int().optional().describe("起始时间，epoch ms（含）。不传则从缓存里最早的已留数据导出，可能早于本次观察"),
+      time_from: z
+        .number()
+        .int()
+        .optional()
+        .describe("起始时间，epoch ms（含）。不传则从缓存里最早的已留数据导出，可能早于本次观察"),
       time_to: z.number().int().optional().describe("结束时间，epoch ms（含）"),
-      offset_from: z.number().int().optional().describe("原始字节起始偏移。给出后按字节环导出，不用 seq"),
+      offset_from: z
+        .number()
+        .int()
+        .optional()
+        .describe("原始字节起始偏移。给出后按字节环导出，不用 seq"),
       offset_to: z.number().int().optional().describe("原始字节结束偏移，不含"),
     }),
     handler: async (args) => {

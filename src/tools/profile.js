@@ -36,8 +36,7 @@ export function profileTools() {
     defineTool({
       name: "profile_list",
       title: "列出连接 profile",
-      description:
-        "列出已保存的串口连接 profile（端口、波特率、换行）。token 不回明文。",
+      description: "列出已保存的串口连接 profile（端口、波特率、换行）。token 不回明文。",
       inputSchema: z.object({}),
       handler: async () => ({
         ok: true,

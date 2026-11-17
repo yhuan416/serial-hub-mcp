@@ -9,6 +9,7 @@ export default [
       "**/build/**",
       "**/coverage/**",
       "**/data/**",
+      "**/src/web/vendor/**",
     ],
   },
   js.configs.recommended,

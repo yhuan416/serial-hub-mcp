@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- `--http` 自带网页调试界面：`GET /` 以 tab 形式实时展示本进程里已打开的各串口收发。新增 `终端 | 日志` 两个视图：终端用内置 xterm.js，按键即时发送（`/api/input` 绕过连接队列），支持 ANSI/光标/清屏/滚回和 Enter/退格映射；日志保留时间戳、历史、下载。`/api/connections`、`/api/terminal`、`/api/history`、`/api/dump`、`/api/write`、`/api/stream` 复用 MCP 工具语义并共用 Bearer token；`SERIAL_HUB_MCP_HTTP_UI=0` 关闭。
+- 页面支持从服务端缓存加载更早数据和导出下载；实时 SSE 按 ~80ms 合并，921600 下事件数从 ~1600/s 降到 ~10/s。
+- 修复 `CaptureCache.addBatch` 在高码率/无换行数据下的 CPU 放大：改为 `indexOf` 扫描、partial 限长、按批裁剪，避免事件循环被占满导致健康检查超时和容器重启。
+- 健康检查改用 `bash /dev/tcp`，不再为每次检查冷启动 Node。
+- `ConnectionManager.subscribe()` 给本地/远端连接加了旁路实时订阅，不影响日志、缓冲和游标。
+
 ## 0.1.9 — 2026-11-16
 
 - 写明 `time_from` 不传会带回更早的缓存，以及 `receive(start=flush)` 只把读游标跳到当前最新字节、不清缓存。

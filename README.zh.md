@@ -52,6 +52,22 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http --host 0.0.0.0 --port 878
 
 默认只听 `127.0.0.1:8787/mcp`。绑到非本机地址时如果不设 token，谁能连上谁就能操作串口。`GET /health` 和 `GET /info` 不鉴权，也不带密钥。
 
+### 调试页面
+
+`--http` 启动后，浏览器打开 `http://127.0.0.1:8787/` 就是一个简易串口监视器：
+
+- 每个连接一个 tab，只渲染当前 tab；后台 tab 继续缓存并显示未读标记；
+- `终端 | 日志` 两个视图：终端用内置 xterm.js，按键即时发送（Ctrl/方向键/Tab/Esc/粘贴），ANSI/光标/清屏/滚回正常；日志保留时间戳、历史、下载；
+- 终端可按设备切换 `Enter`（CR/CRLF/LF）和 `Backspace`（DEL/BS）映射；输入绕过 MCP 连接队列，agent 在 `receive` 时也能打字；
+- 实时显示 RX/TX，带毫秒时间戳，自动滚到底，可暂停、清屏；
+- 高码率数据按 ~80ms 合并推送，避免上千行/秒把页面刷爆；
+- `更早` 从服务端缓存加载历史，`下载` 把当前连接的缓存导出成文件；
+- 发送框（文本 + CR/LF/CRLF），语义与 `write` 工具一致。
+
+页面是静态 HTML，免鉴权；`/api/*` 仍要同一个 Bearer token，页面会提示输入。设
+`SERIAL_HUB_MCP_HTTP_UI=0` 可关闭页面。它只能看到同一个 `--http` 进程里的连接；
+stdio 模式没有页面。
+
 ## 工具
 
 | 工具 | 作用 |

@@ -40,7 +40,9 @@ USER node
 EXPOSE 8787
 VOLUME ["/data", "/config"]
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# 用 bash 的 /dev/tcp 而不是再起一个 node：N100/小内存机器上 node 冷启动可能超过 5s，
+# 会被误判 unhealthy 进而被 autoheal 重启（连接全丢）。
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/8787 && printf "GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3 && grep -q "\"ok\":true" <&3'
 
 ENTRYPOINT ["node", "src/server.js"]

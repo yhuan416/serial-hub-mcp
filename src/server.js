@@ -13,12 +13,14 @@
 //   SERIAL_HUB_MCP_HTTP_HEALTH_PATH  默认 /health
 //   SERIAL_HUB_MCP_HTTP_INFO_PATH    默认 /info
 //   SERIAL_HUB_MCP_HTTP_TOKEN        可选 Bearer token（绑定非回环地址时强烈建议设置）
+//   SERIAL_HUB_MCP_HTTP_UI           默认 1；设为 0 关闭自带的网页调试界面（GET /）
 
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { buildServer, runStdio } from "./sdk/server.js";
 import { runHttp } from "./sdk/http.js";
 import { buildServiceInfo } from "./sdk/service-info.js";
+import { createWebApi } from "./web_api.js";
 import { ConnectionManager } from "./connection.js";
 import { LogStore } from "./log_store.js";
 import { LogRouter } from "./log_router.js";
@@ -72,6 +74,7 @@ if (httpMode) {
   const healthPath = process.env.SERIAL_HUB_MCP_HTTP_HEALTH_PATH || "/health";
   const infoPath = process.env.SERIAL_HUB_MCP_HTTP_INFO_PATH || "/info";
   const token = process.env.SERIAL_HUB_MCP_HTTP_TOKEN || undefined;
+  const uiEnabled = process.env.SERIAL_HUB_MCP_HTTP_UI !== "0";
 
   const loopback = ["127.0.0.1", "localhost", "::1"].includes(host);
   if (!token && !loopback) {
@@ -90,11 +93,19 @@ if (httpMode) {
     healthPath,
     infoPath,
     token,
+    webDir: uiEnabled ? fileURLToPath(new URL("./web/", import.meta.url)) : undefined,
+    apiHandler: uiEnabled ? createWebApi({ manager, tools, queue }) : undefined,
     health: { ok: true, service: SERVICE, version: pkg.version, transport: "http" },
     info: buildServiceInfo({
       service: SERVICE,
       version: pkg.version,
-      endpoints: { mcp: path, health: healthPath, info: infoPath, dumps: "/dumps/{file_id}" },
+      endpoints: {
+        mcp: path,
+        health: healthPath,
+        info: infoPath,
+        dumps: "/dumps/{file_id}",
+        ...(uiEnabled ? { ui: "/" } : {}),
+      },
       changelogPath: CHANGELOG_PATH,
       extra: { tools_count: tools.length },
     }),

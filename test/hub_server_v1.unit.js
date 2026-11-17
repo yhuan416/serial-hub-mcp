@@ -89,9 +89,7 @@ class V1Client {
     this.socket.write(buf);
   }
   async hello(token) {
-    this.send(
-      encodeFrame(T.HELLO, 0, Buffer.from(JSON.stringify({ token, client_id: "t" }))),
-    );
+    this.send(encodeFrame(T.HELLO, 0, Buffer.from(JSON.stringify({ token, client_id: "t" }))));
     const f = await this.wait(T.HELLO_ACK);
     return JSON.parse(f.payload.toString("utf8"));
   }
@@ -292,7 +290,7 @@ test("v1: token 错误被拒绝", async (t) => {
 });
 
 test("v1: history_query 返回 unsupported", async (t) => {
-  const { connect, serials } = await setup(t);
+  const { connect } = await setup(t);
   const c = await connect();
   await c.hello("t1");
   const sub = await c.control("subscribe", { port: "ttyFAKE0" });
@@ -325,7 +323,7 @@ test("v1: cache_set 不改活着的 capture，claim_writer 认字符串", async 
   const { connect, server } = await setup(t, { captureLingerMs: 40 });
   const c = await connect();
   await c.hello("t1");
-  const sub = await c.control("subscribe", { port: "ttyFAKE0" });
+  await c.control("subscribe", { port: "ttyFAKE0" });
   const set = await c.control("cache_set", { cap_bytes: 65536 });
   assert.equal(set.ok, true);
   assert.equal(set.result.applied, "next");

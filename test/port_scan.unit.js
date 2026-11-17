@@ -11,8 +11,17 @@ test("scan drops ports that disappear", async () => {
     listPorts: async () => ports,
   });
   await mgr.scan();
-  assert.deepEqual(mgr.list().map((p) => p.id).sort(), ["ttyACM0", "ttyACM1"]);
+  assert.deepEqual(
+    mgr
+      .list()
+      .map((p) => p.id)
+      .sort(),
+    ["ttyACM0", "ttyACM1"],
+  );
   ports = [{ path: "/dev/ttyACM1" }];
   await mgr.scan();
-  assert.deepEqual(mgr.list().map((p) => p.id), ["ttyACM1"]);
+  assert.deepEqual(
+    mgr.list().map((p) => p.id),
+    ["ttyACM1"],
+  );
 });

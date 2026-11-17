@@ -22,7 +22,11 @@ export const logTools = (logStore) => {
         dir: z.enum(["rx", "tx"]).optional().describe("方向过滤"),
         seq_from: z.number().int().optional().describe("索引下界（含）"),
         seq_to: z.number().int().optional().describe("索引上界（含）"),
-        time_from: z.number().int().optional().describe("时间下界（epoch ms，含）。不传则含更早的缓存行，可能早于本次观察"),
+        time_from: z
+          .number()
+          .int()
+          .optional()
+          .describe("时间下界（epoch ms，含）。不传则含更早的缓存行，可能早于本次观察"),
         time_to: z.number().int().optional().describe("时间上界（epoch ms，含）"),
         contains: z.string().optional().describe("内容子串匹配（区分大小写，作用于 line）"),
         regex: z.string().optional().describe("正则匹配（作用于 line）"),

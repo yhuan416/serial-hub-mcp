@@ -212,3 +212,22 @@ test("dump_to_file 导出已有字节，不推进游标", async () => {
   assert.equal(conn.handled, 0);
   fs.rmSync(file, { force: true });
 });
+
+test("subscribe 收到 rx/tx/closed，退订后不再回调", async () => {
+  const conn = new Connection(null, fakePort(), { rx_buffer_size: 100 });
+  const seen = [];
+  const unsub = conn.subscribe((e) => seen.push(e));
+  conn._onData(Buffer.from("hello"));
+  await conn.write(Buffer.from("AT"));
+  conn._onClose();
+  assert.equal(seen.length, 3);
+  assert.equal(seen[0].dir, "rx");
+  assert.equal(seen[0].chunk.toString(), "hello");
+  assert.ok(seen[0].ts > 0);
+  assert.equal(seen[1].dir, "tx");
+  assert.equal(seen[1].chunk.toString(), "AT");
+  assert.equal(seen[2].type, "closed");
+  unsub();
+  conn._onData(Buffer.from("more"));
+  assert.equal(seen.length, 3);
+});

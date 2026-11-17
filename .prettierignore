@@ -4,3 +4,4 @@ docs/
 build/
 coverage/
 data/
+src/web/vendor/

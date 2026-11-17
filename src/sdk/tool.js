@@ -39,11 +39,24 @@ export function registerTools(server, tools, { queue } = {}) {
   return count;
 }
 
+/**
+ * 直接调用工具（zod 校验 + 按 connection_id 串行），返回 handler 的原始 payload。
+ * MCP 注册路径与 HTTP API（web UI）共用，保证行为一致。
+ */
+export async function invokeTool(tool, args, queue) {
+  if (!tool || typeof tool.handler !== "function") throw new Error("工具不存在");
+  const parsed =
+    tool.inputSchema && typeof tool.inputSchema.parse === "function"
+      ? tool.inputSchema.parse(args ?? {})
+      : (args ?? {});
+  const run = () => tool.handler(parsed);
+  return queue ? queue.run(parsed?.connection_id, run) : run();
+}
+
 async function dispatch(tool, args, queue) {
   const started = Date.now();
   try {
-    const run = () => tool.handler(args);
-    const payload = queue ? await queue.run(args?.connection_id, run) : await run();
+    const payload = await invokeTool(tool, args, queue);
     return packResult({ ...(payload || {}), durationMs: Date.now() - started });
   } catch (err) {
     return packResult({ ...normalizeError(err), durationMs: Date.now() - started });
