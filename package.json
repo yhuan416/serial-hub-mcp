@@ -1,6 +1,6 @@
 {
   "name": "serial-hub-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Serial port MCP server and hub: local UARTs plus remote bridges (ESP32-S3 or an x86 hub-server), byte-transparent I/O, durable per-connection logs, and an endpoint registry for future TCP/UDP/KCP/MQTT transports.",
   "type": "module",
   "main": "src/server.js",
