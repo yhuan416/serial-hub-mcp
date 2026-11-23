@@ -37,6 +37,41 @@ const pkg = require("../package.json");
 const SERVICE = "serial-hub-mcp";
 const CHANGELOG_PATH = fileURLToPath(new URL("../CHANGELOG.md", import.meta.url));
 
+function argValue(flag) {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
+const httpMode = process.argv.includes("--http") || process.env.SERIAL_HUB_MCP_HTTP === "1";
+const httpHost = argValue("--host") || process.env.SERIAL_HUB_MCP_HTTP_HOST || "127.0.0.1";
+const httpPort = Number(argValue("--port") || process.env.SERIAL_HUB_MCP_HTTP_PORT || 8787);
+const httpPath = argValue("--path") || process.env.SERIAL_HUB_MCP_HTTP_PATH || "/mcp";
+const httpHealthPath = process.env.SERIAL_HUB_MCP_HTTP_HEALTH_PATH || "/health";
+const httpInfoPath = process.env.SERIAL_HUB_MCP_HTTP_INFO_PATH || "/info";
+const httpToken = process.env.SERIAL_HUB_MCP_HTTP_TOKEN || undefined;
+const httpUiEnabled = process.env.SERIAL_HUB_MCP_HTTP_UI !== "0";
+const httpAllowAnonymous =
+  process.argv.includes("--allow-anonymous") ||
+  process.env.SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS === "1";
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+const httpBindIsLoopback = LOOPBACK_HOSTS.has(httpHost);
+
+// 非回环地址 + 无 token 默认拒绝启动，避免“能连上端口就能操作串口”。
+if (httpMode && !httpToken && !httpBindIsLoopback) {
+  if (!httpAllowAnonymous) {
+    process.stderr.write(
+      `[${SERVICE}] 拒绝启动：绑定非回环地址 ${httpHost} 但未设置 SERIAL_HUB_MCP_HTTP_TOKEN。` +
+        "请设置 token，或显式加 --allow-anonymous / " +
+        "SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1 确认允许匿名访问。\n",
+    );
+    process.exit(1);
+  }
+  process.stderr.write(
+    `[${SERVICE}] 警告：已允许匿名访问 ${httpHost}:${httpPort}，` +
+      "任何能访问该端口的人都能操作串口\n",
+  );
+}
+
 // host 侧持久缓存：
 //   SERIAL_HUB_MCP_STORE=v2|legacy  （默认 v2：二进制段 + SQLite 索引）
 //   v2: SERIAL_HUB_MCP_STORE_DIR / _RETAIN_BYTES / _SEGMENT_BYTES / _BLOCK_BYTES / _FLUSH_MS
@@ -90,51 +125,28 @@ const tools = buildTools(manager, logRouter, { version: pkg.version });
 // 每个 HTTP 请求一个 server（无状态），但共享同一个 manager/router/queue。
 const createServer = () => buildServer({ name: SERVICE, version: pkg.version, tools, queue });
 
-function argValue(flag) {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
-
-const httpMode = process.argv.includes("--http") || process.env.SERIAL_HUB_MCP_HTTP === "1";
-
 if (httpMode) {
-  const host = argValue("--host") || process.env.SERIAL_HUB_MCP_HTTP_HOST || "127.0.0.1";
-  const port = Number(argValue("--port") || process.env.SERIAL_HUB_MCP_HTTP_PORT || 8787);
-  const path = argValue("--path") || process.env.SERIAL_HUB_MCP_HTTP_PATH || "/mcp";
-  const healthPath = process.env.SERIAL_HUB_MCP_HTTP_HEALTH_PATH || "/health";
-  const infoPath = process.env.SERIAL_HUB_MCP_HTTP_INFO_PATH || "/info";
-  const token = process.env.SERIAL_HUB_MCP_HTTP_TOKEN || undefined;
-  const uiEnabled = process.env.SERIAL_HUB_MCP_HTTP_UI !== "0";
-
-  const loopback = ["127.0.0.1", "localhost", "::1"].includes(host);
-  if (!token && !loopback) {
-    process.stderr.write(
-      `[${SERVICE}] 警告：绑定非回环地址 ${host} 但未设置 SERIAL_HUB_MCP_HTTP_TOKEN，` +
-        "任何能访问该端口的人都能操作串口\n",
-    );
-  }
-
   await runHttp({
     createServer,
     name: SERVICE,
-    host,
-    port,
-    path,
-    healthPath,
-    infoPath,
-    token,
-    webDir: uiEnabled ? fileURLToPath(new URL("./web/", import.meta.url)) : undefined,
-    apiHandler: uiEnabled ? createWebApi({ manager, tools, queue }) : undefined,
+    host: httpHost,
+    port: httpPort,
+    path: httpPath,
+    healthPath: httpHealthPath,
+    infoPath: httpInfoPath,
+    token: httpToken,
+    webDir: httpUiEnabled ? fileURLToPath(new URL("./web/", import.meta.url)) : undefined,
+    apiHandler: httpUiEnabled ? createWebApi({ manager, tools, queue }) : undefined,
     health: { ok: true, service: SERVICE, version: pkg.version, transport: "http" },
     info: buildServiceInfo({
       service: SERVICE,
       version: pkg.version,
       endpoints: {
-        mcp: path,
-        health: healthPath,
-        info: infoPath,
+        mcp: httpPath,
+        health: httpHealthPath,
+        info: httpInfoPath,
         dumps: "/dumps/{file_id}",
-        ...(uiEnabled ? { ui: "/" } : {}),
+        ...(httpUiEnabled ? { ui: "/" } : {}),
       },
       changelogPath: CHANGELOG_PATH,
       extra: { tools_count: tools.length },

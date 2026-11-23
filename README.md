@@ -93,9 +93,10 @@ SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
 - Stateless Streamable HTTP: every request gets its own MCP server instance while sharing the
   same connection manager / log router / queue, so connections persist across requests.
 - `GET /health` and `GET /info` are unauthenticated and contain no secrets.
-- The server listens on loopback by default. If you bind a non-loopback address **without**
-  `SERIAL_HUB_MCP_HTTP_TOKEN`, it prints a warning — anyone who can reach the port can operate
-  the serial ports.
+- The server listens on loopback by default. Binding a non-loopback address **without**
+  `SERIAL_HUB_MCP_HTTP_TOKEN` is refused at startup; pass `--allow-anonymous` or set
+  `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1` only when you really want an unauthenticated port
+  (anyone who can reach it can operate the serial ports).
 - The token is compared with a constant-time check and sent as `Authorization: Bearer <token>`.
 
 ## Debug UI
@@ -172,16 +173,23 @@ lost before they reached the host. `log_clear` with no `connection_id` requires
 
 ## Configuration
 
-All paths use XDG defaults and can be overridden:
+Paths use `XDG_CACHE_HOME` (default `~/.cache`) and `XDG_CONFIG_HOME` (default `~/.config`) and
+can be overridden:
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `SERIAL_HUB_MCP_LOGS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/logs` | Log partitions |
+| `SERIAL_HUB_MCP_LOGS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/logs` | Legacy JSONL log partitions (`STORE=legacy`) |
 | `SERIAL_HUB_MCP_LOG_MEM` | `1000` | In-memory log entries per process |
 | `SERIAL_HUB_MCP_LOG_RETAIN_BYTES` | `67108864` (64 MiB/conn) | Disk retention; `<=0` disables eviction |
-| `SERIAL_HUB_MCP_LOG_PART_BYTES` | `8388608` (8 MiB) | Partition roll size |
-| `SERIAL_HUB_MCP_PROFILES_DIR` | `$XDG_CONFIG_HOME/serial-hub-mcp` | Profiles |
+| `SERIAL_HUB_MCP_LOG_PART_BYTES` | `8388608` (8 MiB) | Legacy partition roll size |
+| `SERIAL_HUB_MCP_OPENS_FILE` | `$XDG_CACHE_HOME/serial-hub-mcp/opens.json` | `open_list` index |
+| `SERIAL_HUB_MCP_PROFILES_DIR` | `$XDG_CONFIG_HOME/serial-hub-mcp` | Directory containing `profiles.json` |
+| `SERIAL_HUB_MCP_REMOTES` | unset | Inline remotes JSON (highest priority) |
+| `SERIAL_HUB_MCP_REMOTES_FILE` | `$XDG_CONFIG_HOME/serial-hub-mcp/remotes.json` | Remotes registry file |
 | `SERIAL_HUB_MCP_DUMPS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/dumps` | `dump_to_file` output |
+| `SERIAL_HUB_MCP_SYNC_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/remote-sync` | Legacy remote-sync cache |
+| `SERIAL_HUB_MCP_V1_CACHE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cache` | v1 host cache when the v2 store is off |
+| `SERIAL_HUB_MCP_V1_STATE_FILE` | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cursors.json` | v1 resume cursors |
 | `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7` | Delete logs, dumps, and capture cache older than this. `0` disables |
 | `SERIAL_HUB_MCP_HTTP` | unset | `1` enables HTTP mode (same as `--http`) |
 | `SERIAL_HUB_MCP_HTTP_HOST` | `127.0.0.1` | HTTP bind host |
@@ -189,7 +197,9 @@ All paths use XDG defaults and can be overridden:
 | `SERIAL_HUB_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path |
 | `SERIAL_HUB_MCP_HTTP_HEALTH_PATH` | `/health` | Health endpoint (unauthenticated) |
 | `SERIAL_HUB_MCP_HTTP_INFO_PATH` | `/info` | Service info endpoint (unauthenticated) |
-| `SERIAL_HUB_MCP_HTTP_TOKEN` | unset | Optional Bearer token for `/mcp` |
+| `SERIAL_HUB_MCP_HTTP_TOKEN` | unset | **Secret.** Bearer token for `/mcp`, `/api/*`, and `/dumps/*`. Required for non-loopback binds unless anonymous access is explicitly allowed |
+| `SERIAL_HUB_MCP_HTTP_UI` | `1` | `0` disables the debug web UI |
+| `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS` | unset | `1` allows a non-loopback bind without a token (**dangerous**) |
 
 ## Data and log model
 
@@ -220,6 +230,25 @@ read only the blocks they need. Set `SERIAL_HUB_MCP_STORE=legacy` to use the old
 v2 covers both local ports and the hub-mcp-side log cache for remote v1 sessions. The remote
 hub-server's own ring/capture is unchanged. Old JSONL is not imported automatically; use
 `legacy` to query it.
+
+### x86 hub-server environment
+
+`serial-hub-server` reads these variables; command-line flags win over env. Deployment details
+and the full flag list are in [x86 hub-server](docs/x86-hub-server.md).
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `SERIAL_HUB_SERVER_TOKEN` | generated `<data-dir>/token` (0600) | **Secret.** HELLO auth token |
+| `SERIAL_HUB_SERVER_LISTEN` | `0.0.0.0:7000` | Listen address |
+| `SERIAL_HUB_SERVER_DATA_DIR` | `~/.local/share/serial-hub-server` | Data and token directory |
+| `SERIAL_HUB_SERVER_PORTS` | `/dev/ttyUSB,/dev/ttyACM,/dev/serial/,COM` | Port path substrings or `/regex/`; empty exposes all |
+| `SERIAL_HUB_SERVER_RING_BYTES` | `64MiB` | Per-port ring buffer |
+| `SERIAL_HUB_SERVER_RETENTION_BYTES` | `4GiB` | Per-port disk retention |
+| `SERIAL_HUB_SERVER_CAPTURE_LINGER_MS` | `60000` | Capture linger after the last session leaves |
+| `SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES` | `128MiB` | Per-capture send-cache cap |
+| `SERIAL_HUB_SERVER_WINDOW_BYTES` | `256KiB` | Default per-session window |
+| `SERIAL_HUB_SERVER_MAX_WINDOW_BYTES` | `1MiB` | Maximum per-session window |
+| `SERIAL_HUB_SERVER_LEASE_MS` | `120000` | Session lease timeout |
 
 ## Design
 

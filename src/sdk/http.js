@@ -11,6 +11,10 @@ import nodePath from "node:path";
 import crypto from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
+// Node 18 的 test runner 及部分嵌入上下文不提供全局 WebCrypto；MCP SDK 的
+// Streamable HTTP transport 在请求时依赖 crypto.randomUUID()。
+if (!globalThis.crypto) globalThis.crypto = crypto.webcrypto;
+
 const DEFAULT_BODY_LIMIT = 4 * 1024 * 1024;
 
 // 自带页面只允许加载这几个 vendor 资源（xterm 相关），不做通用静态目录。
