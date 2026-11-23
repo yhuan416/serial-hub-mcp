@@ -22,6 +22,8 @@ The byte plane is intentionally boring: bytes in, bytes out, no framing, no prom
 interpretation. Content judgement is left to the agent. The host splits lines for retrieval,
 assigns log sequence numbers, and keeps the raw hex as the source of truth.
 
+![serial-hub-mcp Web UI: terminal and log views with live RX/TX](docs/assets/web-ui.png)
+
 ## Why
 
 - **One interface for local and remote**: the same `read` / `write` / `transact` / `receive`

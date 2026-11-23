@@ -8,6 +8,7 @@ All notable changes to this project are documented here.
   （npm 尚未发布），补充 Security 和 Mermaid 架构图。
 - 拆分文档：新增 getting-started、tools、configuration、deployment、storage、troubleshooting、
   development 和 docs 索引；删除已过期的 hub-architecture；新增 SECURITY 与 GitHub issue/PR 模板。
+- README 增加 Web UI 截图；新增 `docs/assets/social-preview.png`（1280×640）用于 GitHub social preview。
 
 ## 0.3.2 — 2026-11-23
 

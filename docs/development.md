@@ -148,6 +148,14 @@ README / Harbor / git tag 三处的版本号要一致。
 4. 补 `test/v1_*.unit.js` 和 `test/hub_server_v1.unit.js`。
 5. 不兼容改动升协议版本，不要偷偷改字段含义。
 
+## GitHub 仓库设置
+
+- Description / Homepage / Topics 用 `gh repo edit` 维护。
+- Releases 用 tag 创建，正文取 `CHANGELOG.md` 对应段落；最新版本标 Latest。
+- Social preview 需要在 **Settings → General → Social preview** 手动上传
+  [`docs/assets/social-preview.png`](assets/social-preview.png)（1280×640）。
+- README 顶部截图是 [`docs/assets/web-ui.png`](assets/web-ui.png)，来自 `--http` 的网页界面。
+
 ## 文档
 
 - 新文档放 `docs/`，并在 `docs/README.md` 加索引。

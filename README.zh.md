@@ -19,6 +19,8 @@ English: [README.md](README.md)
 字节面保持透明：进什么出什么，不组帧、不判读提示符/正则，内容判断交给 agent。host 负责按行
 切分、分配日志 `seq` 和保存原始 hex。
 
+![serial-hub-mcp 网页界面：终端与日志视图，实时 RX/TX](docs/assets/web-ui.png)
+
 ## 为什么
 
 - **本机/远端同一套接口**：不管端口在本机、ESP32 还是另一台 Linux，agent 都用同一组
