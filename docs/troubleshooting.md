@@ -73,15 +73,16 @@ docker logs --tail 100 serial-hub-mcp
 
 ## Docker
 
-| 现象                                              | 原因                                   | 处理                                                             |
-| ------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------- |
-| 容器里看不到 `/dev/ttyACM*`                       | 只绑了单个 `--device`，或节点没插      | 绑定 `/dev`，用 `device_cgroup_rules` 放行 `c 166:*` / `c 188:*` |
-| 看得到节点但打不开                                | cgroup 没放行或不在 `dialout`          | 检查 `device_cgroup_rules` 和 `group_add: ["20"]`                |
-| `SerialPort.list()` 没厂商信息                    | 没挂 `/run/udev`                       | `-v /run/udev:/run/udev:ro`                                      |
-| 容器健康检查失败                                  | 端口/路径不对，或启动被 token 策略拒绝 | `docker logs` 看启动日志；`/health` 是否 200                     |
-| hub 启动报无法读取 `SERIAL_HUB_SERVER_TOKEN_FILE` | token 文件缺失、不可读或为空           | 检查 secret 挂载路径与 0600 权限；或改用 `<data-dir>/token`      |
-| MCP 连不到本机 hub                                | 用了容器内 `localhost`                 | 用 `host.docker.internal:7000`（加 host-gateway）或实际 IP       |
-| 容器重启后会话没了                                | 连接是进程内状态                       | 重新 `open`；日志/游标在 `/data`，可续传                         |
+| 现象                                              | 原因                                          | 处理                                                             |
+| ------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------- |
+| 容器里看不到 `/dev/ttyACM*`                       | 只绑了单个 `--device`，或节点没插             | 绑定 `/dev`，用 `device_cgroup_rules` 放行 `c 166:*` / `c 188:*` |
+| 看得到节点但打不开                                | cgroup 没放行或不在 `dialout`                 | 检查 `device_cgroup_rules` 和 `group_add: ["20"]`                |
+| `SerialPort.list()` 没厂商信息                    | 没挂 `/run/udev`                              | `-v /run/udev:/run/udev:ro`                                      |
+| 容器健康检查失败                                  | 端口/路径不对，或启动被 token 策略拒绝        | `docker logs` 看启动日志；`/health` 是否 200                     |
+| 容器启动即退出，日志报 `EACCES` / `/data`         | bind mount 目录对容器内 node(uid 1000) 不可写 | `sudo chown -R 1000:1000 <宿主目录>`，或改用 named volume        |
+| hub 启动报无法读取 `SERIAL_HUB_SERVER_TOKEN_FILE` | token 文件缺失、不可读或为空                  | 检查 secret 挂载路径与 0600 权限；或改用 `<data-dir>/token`      |
+| MCP 连不到本机 hub                                | 用了容器内 `localhost`                        | 用 `host.docker.internal:7000`（加 host-gateway）或实际 IP       |
+| 容器重启后会话没了                                | 连接是进程内状态                              | 重新 `open`；日志/游标在 `/data`，可续传                         |
 
 ## 性能与内存
 

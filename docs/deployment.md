@@ -88,6 +88,10 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
 
 删除容器不会丢 `/data`；正在开着的串口会话会断，重开后从游标续上。
 
+绑定宿主机目录时，确保容器内的 `node` 用户（uid 1000）可写，例如
+`sudo chown -R 1000:1000 ~/.local/share/serial-hub-mcp`；否则用 Docker named volume。
+容器以非 root 运行，宿主机 root 创建的目录默认不可写。
+
 如果 MCP 容器要访问宿主机上的 hub，用
 `--add-host=host.docker.internal:host-gateway`，`remotes.json` 里写
 `tcp://host.docker.internal:7000`。跨机则写实际 IP。
