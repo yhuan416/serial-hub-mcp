@@ -3,7 +3,7 @@
 > 一个 MCP server，同时管理本机 UART 和远端串口 —— 字节透明、日志可查、自带网页终端。
 
 [![CI](https://github.com/yhuan416/serial-hub-mcp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/yhuan416/serial-hub-mcp/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/tag/yhuan416/serial-hub-mcp?label=release&style=flat-square)](https://github.com/yhuan416/serial-hub-mcp/tags)
+[![Release](https://img.shields.io/github/v/release/yhuan416/serial-hub-mcp?style=flat-square)](https://github.com/yhuan416/serial-hub-mcp/releases/latest)
 [![License](https://img.shields.io/github/license/yhuan416/serial-hub-mcp?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white&style=flat-square)](https://nodejs.org/)
 [![M8ven Verified](https://m8ven.ai/badge/mcp/yhuan416-serial-hub-mcp-j8uwb6?variant=verified)](https://m8ven.ai/mcp/yhuan416-serial-hub-mcp-j8uwb6?s=readme)
