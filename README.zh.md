@@ -155,6 +155,8 @@ open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", p
 | `SERIAL_HUB_MCP_PROFILES_DIR`   | `$XDG_CONFIG_HOME/serial-hub-mcp`              | `profiles.json` 目录                         |
 
 路径默认按 `$XDG_CACHE_HOME`（`~/.cache`）和 `$XDG_CONFIG_HOME`（`~/.config`）。
+密钥也支持 `<NAME>_FILE`（Docker/K8s secret 文件），直接环境变量优先。见
+[docs/configuration.md](docs/configuration.md#密钥)。
 
 ## 部署
 
@@ -217,8 +219,21 @@ npm run smoke:http
 - 远端链路和 HTTP 都是明文，只在可信局域网、VPN 或 SSH 隧道里用。
 - 绑非回环 HTTP 地址但没设 `SERIAL_HUB_MCP_HTTP_TOKEN` 时会拒绝启动；确需匿名访问要显式加
   `--allow-anonymous` / `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1`。
+- loopback HTTP 默认校验 `Host` / `Origin`，只接受 `127.0.0.1` / `localhost`（防 DNS rebinding）。
+  用主机名或反向代理时，通过 `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS` /
+  `SERIAL_HUB_MCP_HTTP_ALLOWED_ORIGINS` 覆盖。
 - 工具返回和 `open_list` 会打码 token；`remotes.json` 推荐用 `token_env`。
 - 安全问题请私下报告，见 [SECURITY.md](SECURITY.md)。
+
+### 密钥
+
+| 密钥                        | 用途                                         | 来源                                                                   | 处理                                             |
+| --------------------------- | -------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------ |
+| `SERIAL_HUB_MCP_HTTP_TOKEN` | `/mcp`、`/api/*`、`/dumps/*` 的 Bearer token | 环境变量或 `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`                            | 常量时间比较；不写日志；返回打码                 |
+| `SERIAL_HUB_SERVER_TOKEN`   | x86 hub 的 HELLO 鉴权                        | 环境变量、`SERIAL_HUB_SERVER_TOKEN_FILE` 或 `<data-dir>/token`（0600） | `timingSafeEqual`；不写日志；`open`/profile 打码 |
+
+直接环境变量优先于 `*_FILE`。`*_FILE` 缺失或为空会直接退出，不会悄悄生成新 token。生产环境
+建议用 Docker/Kubernetes secret 挂载文件；见 [docs/configuration.md](docs/configuration.md#密钥)。
 
 ## License
 

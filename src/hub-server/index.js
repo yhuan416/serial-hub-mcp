@@ -17,6 +17,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { HubServer } from "./server.js";
+import { readSecret } from "../secrets.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../../package.json");
@@ -62,8 +63,10 @@ function dataDirOf() {
 }
 
 function tokenOf(dataDir) {
-  const fromArg = argValue("--token") || process.env.SERIAL_HUB_SERVER_TOKEN;
+  const fromArg = argValue("--token");
   if (fromArg) return fromArg;
+  const fromEnv = readSecret("SERIAL_HUB_SERVER_TOKEN");
+  if (fromEnv) return fromEnv;
   const file = path.join(dataDir, "token");
   try {
     const t = fs.readFileSync(file, "utf8").trim();
@@ -93,6 +96,13 @@ async function main() {
         .filter(Boolean)
     : ["/dev/ttyUSB", "/dev/ttyACM", "/dev/serial/", "COM"]; // 默认只暴露常用 USB/串口设备
   const token = tokenOf(dataDir);
+  const tokenSource = argValue("--token")
+    ? "--token"
+    : process.env.SERIAL_HUB_SERVER_TOKEN
+      ? "SERIAL_HUB_SERVER_TOKEN"
+      : process.env.SERIAL_HUB_SERVER_TOKEN_FILE
+        ? `SERIAL_HUB_SERVER_TOKEN_FILE (${process.env.SERIAL_HUB_SERVER_TOKEN_FILE})`
+        : `file (${path.join(dataDir, "token")})`;
 
   const server = new HubServer({
     dataDir,
@@ -144,7 +154,7 @@ async function main() {
       ? `${addr.address}:${addr.port}`
       : `${listen.host}:${listen.port}`;
   console.log(`[serial-hub-server] v${pkg.version} listening on ${where}`);
-  console.log(`[serial-hub-server] data-dir=${dataDir} token-file=${path.join(dataDir, "token")}`);
+  console.log(`[serial-hub-server] data-dir=${dataDir} token-source=${tokenSource}`);
   const list = server.manager.list();
   console.log(
     `[serial-hub-server] ports=${list.length}${list.length ? ` (${list.map((p) => p.id).join(", ")})` : ""}`,

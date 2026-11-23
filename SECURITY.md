@@ -33,8 +33,37 @@
 - **非回环 fail-closed**：绑定非回环地址且没有 token 时进程拒绝启动。只有显式
   `--allow-anonymous` 或 `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1` 才会放行；此时任何能访问端口
   的人都能操作串口。
+- **Host/Origin 校验**：绑定 loopback 时默认只接受 `127.0.0.1` / `localhost` 的 Host 和
+  Origin，缓解 DNS rebinding。用主机名或反向代理时用
+  `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS` / `SERIAL_HUB_MCP_HTTP_ALLOWED_ORIGINS` 显式覆盖。
 - **token 处理**：工具返回、`profile_list`、`open_list` 里的 token 会打码；`remotes.json`
   优先用 `token_env`，不要把 token 提交到 git 或写进镜像。
+
+## Secrets and environment variables
+
+| Secret                      | Purpose                                       | Source                                                                                                  | Handling                                                     |
+| --------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `SERIAL_HUB_MCP_HTTP_TOKEN` | Bearer token for `/mcp`, `/api/*`, `/dumps/*` | `SERIAL_HUB_MCP_HTTP_TOKEN` or `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`                                         | Constant-time compare; never logged; masked in tool output   |
+| `SERIAL_HUB_SERVER_TOKEN`   | HELLO auth for `serial-hub-server`            | `SERIAL_HUB_SERVER_TOKEN`, `SERIAL_HUB_SERVER_TOKEN_FILE`, or `<data-dir>/token` (0600, auto-generated) | `timingSafeEqual`; never logged; masked in `open` / profiles |
+
+Rules:
+
+- Direct environment variables take precedence over `*_FILE`.
+- `*_FILE` is read once at startup, trimmed, and must be non-empty. A missing or empty file
+  aborts startup instead of silently generating a new token.
+- Prefer Docker/Kubernetes secrets or a `0600` file over `-e` / `docker inspect`-visible env.
+- Rotate by replacing the file/env and restarting the process; the HTTP token is not hot-reloaded.
+- `SERIAL_HUB_SERVER_TOKEN` can be omitted from the environment entirely by using the hub's
+  `<data-dir>/token` file.
+
+## HTTP Host/Origin validation
+
+- Loopback binds with a fixed port validate `Host` and `Origin` against the local hostnames by
+  default. Non-loopback binds and ephemeral ports do not get a default allowlist.
+- Set `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS` and `SERIAL_HUB_MCP_HTTP_ALLOWED_ORIGINS` when the
+  service is reached through a hostname, reverse proxy, or container name.
+- Values are comma-separated and must match the raw `Host` / `Origin` header, including the port.
+- This is defense in depth for local HTTP MCP servers; it does not replace TLS or authentication.
 - **串口即执行面**：`write` / `transact` 可以驱动设备执行动作。MCP 工具只做字节传输，不对
   设备协议做安全判断；agent 和上层策略负责确认命令。
 - **本地文件**：profiles、remotes、日志、dump 默认在 XDG 目录下；容器里建议把 `/config`

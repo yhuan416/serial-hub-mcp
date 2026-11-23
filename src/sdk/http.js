@@ -222,11 +222,13 @@ export function createHttpServer(opts = {}) {
 
       const body = req.method === "POST" ? await readJsonBody(req, bodyLimit) : undefined;
       const mcp = createServer();
+      const hasAllowlist = Boolean(allowedHosts?.length || allowedOrigins?.length);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // 无状态
         enableJsonResponse: true,
-        ...(allowedHosts ? { allowedHosts } : {}),
-        ...(allowedOrigins ? { allowedOrigins } : {}),
+        ...(hasAllowlist ? { enableDnsRebindingProtection: true } : {}),
+        ...(allowedHosts?.length ? { allowedHosts } : {}),
+        ...(allowedOrigins?.length ? { allowedOrigins } : {}),
       });
       res.on("close", () => {
         Promise.resolve()

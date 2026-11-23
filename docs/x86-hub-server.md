@@ -30,34 +30,35 @@ node src/hub-server/index.js --listen 0.0.0.0:7000 \
 
 ```
 [serial-hub-server] v0.1.0 listening on 0.0.0.0:7000
-[serial-hub-server] data-dir=/var/lib/serial-hub-server token-file=/var/lib/serial-hub-server/token
+[serial-hub-server] data-dir=/var/lib/serial-hub-server token-source=file (/var/lib/serial-hub-server/token)
 [serial-hub-server] ports=2 (ttyACM1, ttyACM0)
 ```
 
-token 读取顺序：`--token` > `SERIAL_HUB_SERVER_TOKEN` > `<data-dir>/token`（不存在则生成）。
+token 读取顺序：`--token` > `SERIAL_HUB_SERVER_TOKEN` > `SERIAL_HUB_SERVER_TOKEN_FILE` >
+`<data-dir>/token`（不存在则生成 0600 文件）。
 
 ## 2. 常用参数
 
-| 参数 | 默认 | 说明 |
-|---|---|---|
-| `--listen` | `0.0.0.0:7000` | 监听地址；只本机用建议 `127.0.0.1:7000` |
-| `--token` | 自动生成 | HELLO 鉴权 token（建议走环境变量/文件，别写进命令行历史） |
-| `--data-dir` | `~/.local/share/serial-hub-server` | 日志/状态目录 |
-| `--ports` | `/dev/ttyUSB,/dev/ttyACM,/dev/serial/,COM` | 逗号分隔的路径子串或 `/re/`；`--ports ""` 关闭过滤=暴露全部 |
-| `--ring-bytes` | `64MiB` | 每端口环形缓冲（可按字节或 `128MiB`） |
-| `--segment-bytes` | `64MiB` | 单段日志上限 |
-| `--retention-bytes` | `4GiB` | 每端口磁盘保留上限 |
-| `--retention-days` | `7` | 按天数淘汰旧段 |
-| `--ram-entries` | `20000` | hub 自己的行窗口条数。agent 查的是 MCP host 日志，不是这个窗口 |
-| `--max-frame` | `1MiB` | 单帧 JSON 上限（x86 可以比 ESP32 放宽） |
-| `--max-hold-ms` | `30000` | READ 长轮询硬上限 |
-| `--scan-interval-ms` | `2000` | 端口热插拔扫描周期 |
-| `--baud` | `115200` | 新端口默认波特率 |
-| `--capture-max-bytes` | `128MiB` | 发送缓存上限。也可发协议 `cache_set` |
-| `--capture-linger-ms` | `60000` | 最后一个会话离开后，capture 再留多久 |
-| `--lease-ms` | `120000` | 会话租约。ping 会续租 |
+| 参数                  | 默认                                       | 说明                                                           |
+| --------------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| `--listen`            | `0.0.0.0:7000`                             | 监听地址；只本机用建议 `127.0.0.1:7000`                        |
+| `--token`             | 自动生成                                   | HELLO 鉴权 token（建议走环境变量/文件，别写进命令行历史）      |
+| `--data-dir`          | `~/.local/share/serial-hub-server`         | 日志/状态目录                                                  |
+| `--ports`             | `/dev/ttyUSB,/dev/ttyACM,/dev/serial/,COM` | 逗号分隔的路径子串或 `/re/`；`--ports ""` 关闭过滤=暴露全部    |
+| `--ring-bytes`        | `64MiB`                                    | 每端口环形缓冲（可按字节或 `128MiB`）                          |
+| `--segment-bytes`     | `64MiB`                                    | 单段日志上限                                                   |
+| `--retention-bytes`   | `4GiB`                                     | 每端口磁盘保留上限                                             |
+| `--retention-days`    | `7`                                        | 按天数淘汰旧段                                                 |
+| `--ram-entries`       | `20000`                                    | hub 自己的行窗口条数。agent 查的是 MCP host 日志，不是这个窗口 |
+| `--max-frame`         | `1MiB`                                     | 单帧 JSON 上限（x86 可以比 ESP32 放宽）                        |
+| `--max-hold-ms`       | `30000`                                    | READ 长轮询硬上限                                              |
+| `--scan-interval-ms`  | `2000`                                     | 端口热插拔扫描周期                                             |
+| `--baud`              | `115200`                                   | 新端口默认波特率                                               |
+| `--capture-max-bytes` | `128MiB`                                   | 发送缓存上限。也可发协议 `cache_set`                           |
+| `--capture-linger-ms` | `60000`                                    | 最后一个会话离开后，capture 再留多久                           |
+| `--lease-ms`          | `120000`                                   | 会话租约。ping 会续租                                          |
 
-环境变量同名映射：`SERIAL_HUB_SERVER_TOKEN/LISTEN/DATA_DIR/PORTS/RING_BYTES/RETENTION_BYTES/CAPTURE_MAX_BYTES/CAPTURE_LINGER_MS/LEASE_MS`。
+环境变量同名映射：`SERIAL_HUB_SERVER_TOKEN/LISTEN/DATA_DIR/PORTS/RING_BYTES/RETENTION_BYTES/CAPTURE_MAX_BYTES/CAPTURE_LINGER_MS/LEASE_MS`。token 也可以用 `SERIAL_HUB_SERVER_TOKEN_FILE` 指向文件。
 
 这些不进 MCP 工具列表。要改就重启 hub 时带上参数。发送缓存也可以对 hub 发 v1 控制帧 `{"op":"cache_set","cap_bytes":134217728}`。`applied=next` 表示当前 capture 还用旧缓冲，最后一个会话离开并过 60 秒后新建才换。
 
@@ -74,6 +75,7 @@ docker logs -f serial-hub-server
 本地镜像名是 `serial-hub-server`。compose 不写仓库地址。
 
 n100（讯美 wifi/dsp 两路 ttyACM）可直接用：
+
 ```bash
 docker compose -f docker/docker-compose.n100.yml up -d   # 自动 pull Harbor 镜像
 ```
@@ -147,10 +149,10 @@ sudo cat /var/lib/serial-hub-server/token     # 取 token 填到 MCP
 
 ## 10. 排障
 
-| 现象 | 排查 |
-|---|---|
-| `unauthorized` | token 不一致（看 `<data-dir>/token`） |
-| `port_not_found` | `INFO.ports` 里没有该 id；检查 `--ports` 过滤、用户权限 |
-| 读到的全是乱码 | 波特率不对；用 `CONFIG` 重新下发 |
-| 日志为空 | 端口尚未有数据；先 `CONFIG` 打开端口 |
+| 现象               | 排查                                                         |
+| ------------------ | ------------------------------------------------------------ |
+| `unauthorized`     | token 不一致（看 `<data-dir>/token`）                        |
+| `port_not_found`   | `INFO.ports` 里没有该 id；检查 `--ports` 过滤、用户权限      |
+| 读到的全是乱码     | 波特率不对；用 `CONFIG` 重新下发                             |
+| 日志为空           | 端口尚未有数据；先 `CONFIG` 打开端口                         |
 | `log_query` 是空的 | host 还没切出整行。先 `receive` 或等一行结束。设备不提供日志 |

@@ -39,6 +39,10 @@ SERIAL_HUB_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" \
 - 绑定非回环地址但没设 token 会拒绝启动；确需匿名访问加 `--allow-anonymous` 或
   `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1`。
 - 反向代理需要支持 SSE/流式响应，并把 `Authorization` 原样转发；不要把 `/mcp` 做成缓冲式代理。
+- 绑定 loopback 时默认只接受本机 `Host` / `Origin`（防 DNS rebinding）。用主机名、反向代理或
+  容器名访问时，设置 `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS` / `_ORIGINS`，值要包含端口。
+- 可以用 `SERIAL_HUB_MCP_HTTP_TOKEN_FILE` 挂载 token 文件，避免 token 出现在 `docker inspect`
+  的环境变量里。
 - 关闭网页界面：`SERIAL_HUB_MCP_HTTP_UI=0`。
 
 ## Docker：MCP 中心
@@ -54,6 +58,16 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
   -e SERIAL_HUB_MCP_HTTP_TOKEN="$(cat ~/.config/serial-hub-mcp/http.token)" \
   -v ~/.local/share/serial-hub-mcp:/data \
   -v ~/.config/serial-hub-mcp:/config:ro \
+  serial-hub-mcp:0.3.2
+
+# 更推荐：token 走文件，避免出现在 docker inspect 的环境变量里
+docker run -d --name serial-hub-mcp --restart unless-stopped \
+  --add-host=host.docker.internal:host-gateway \
+  -p 8788:8787 \
+  -e SERIAL_HUB_MCP_HTTP_TOKEN_FILE=/run/secrets/mcp_http_token \
+  -v ~/.local/share/serial-hub-mcp:/data \
+  -v ~/.config/serial-hub-mcp:/config:ro \
+  -v ~/.config/serial-hub-mcp/http.token:/run/secrets/mcp_http_token:ro \
   serial-hub-mcp:0.3.2
 ```
 
@@ -96,6 +110,8 @@ docker compose -f docker/docker-compose.hub.yml up -d --build
 - `group_add: ["20"]` 对应 Debian 系 `dialout`。
 - 每 2 秒扫描端口；新节点会出现，节点消失后从列表去掉。扫描只加不减的旧行为已修正。
 - `--ports` 只暴露真实在用的串口，避免把 `ttyS*` 全部暴露。
+- hub token 可以用 `SERIAL_HUB_SERVER_TOKEN_FILE` 挂载文件，或直接放进 `<data-dir>/token`；
+  后者是默认生成位置（0600）。
 
 n100 之类的现成 compose 见 [docker/docker-compose.n100.yml](../docker/docker-compose.n100.yml)。
 完整参数见 [x86-hub-server.md](x86-hub-server.md)。
@@ -150,5 +166,7 @@ docker run -d ... harbor.example.com/ipcs/serial-hub-mcp:0.3.2
 
 - 远端链路和 HTTP 都是明文；跨公网请走 VPN 或 SSH 隧道。
 - 不要把 7000（hub）和 8787（MCP）直接暴露到公网。
-- hub 的 token 在 `<data-dir>/token`（0600）；MCP 的 token 在 `mcp.env` / 容器环境里。
+- hub 的 token 在 `<data-dir>/token`（0600）或 `SERIAL_HUB_SERVER_TOKEN_FILE`；MCP 的 token 在
+  `mcp.env` / 容器环境 / `SERIAL_HUB_MCP_HTTP_TOKEN_FILE` 里。
 - `remotes.json` 推荐 `token_env`，不要提交到 git。
+- 用文件挂载 secret 时，文件权限至少 `0600`；缺失或为空时进程会拒绝启动。

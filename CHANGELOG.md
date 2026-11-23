@@ -9,6 +9,11 @@ All notable changes to this project are documented here.
 - 拆分文档：新增 getting-started、tools、configuration、deployment、storage、troubleshooting、
   development 和 docs 索引；删除已过期的 hub-architecture；新增 SECURITY 与 GitHub issue/PR 模板。
 - README 增加 Web UI 截图；新增 `docs/assets/social-preview.png`（1280×640）用于 GitHub social preview。
+- 新增 `SERIAL_HUB_MCP_HTTP_TOKEN_FILE` / `SERIAL_HUB_SERVER_TOKEN_FILE`：secret 可以直接从文件读取，
+  适合 Docker/Kubernetes secret；直接环境变量优先，文件缺失或为空会拒绝启动。
+- loopback HTTP 默认校验 `Host` / `Origin`（DNS rebinding 防护）；可用
+  `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS` / `SERIAL_HUB_MCP_HTTP_ALLOWED_ORIGINS` 覆盖。
+- 文档补充 Secrets 表、文件式 secret 挂载、403 Host/Origin 和 token 文件排障。
 
 ## 0.3.2 — 2026-11-23
 

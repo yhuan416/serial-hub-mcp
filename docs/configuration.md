@@ -54,8 +54,23 @@
 | `SERIAL_HUB_MCP_HTTP_HEALTH_PATH`     | `/health`   | 健康检查，免鉴权                                        |
 | `SERIAL_HUB_MCP_HTTP_INFO_PATH`       | `/info`     | 服务信息，免鉴权                                        |
 | `SERIAL_HUB_MCP_HTTP_TOKEN`           | 未设置      | **密钥。** `/mcp`、`/api/*`、`/dumps/*` 的 Bearer token |
+| `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`      | 未设置      | **密钥文件。** 从文件读取 token；直接环境变量优先       |
+| `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS`   | 见下文      | 逗号分隔的允许 Host，必须包含端口                       |
+| `SERIAL_HUB_MCP_HTTP_ALLOWED_ORIGINS` | 见下文      | 逗号分隔的允许 Origin，如 `http://127.0.0.1:8787`       |
 | `SERIAL_HUB_MCP_HTTP_UI`              | `1`         | `0` 关闭网页调试界面                                    |
 | `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS` | 未设置      | `1` 允许非回环地址无 token 启动（**危险**）             |
+
+绑定 loopback（`127.0.0.1` / `localhost` / `::1`）且端口固定时，默认只接受本机
+`Host` / `Origin`（防 DNS rebinding）。非回环地址或端口为 `0` 时不做默认限制；用主机名、
+反向代理或容器名访问时，显式设置：
+
+```bash
+SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS="mcp.example.com:8787,127.0.0.1:8787" \
+SERIAL_HUB_MCP_HTTP_ALLOWED_ORIGINS="https://mcp.example.com" \
+  node src/server.js --http --host 0.0.0.0 --port 8787
+```
+
+值是**原始 Host/Origin 头**，必须带端口；逗号分隔，前后空白会去掉。
 
 绑定非回环地址且没有 token 时，进程拒绝启动。放行方式：
 
@@ -92,6 +107,7 @@ segment/block 索引；`legacy` 回到旧的 JSONL 实现。
 | 变量                                  | 默认                                       | 说明                                       |
 | ------------------------------------- | ------------------------------------------ | ------------------------------------------ |
 | `SERIAL_HUB_SERVER_TOKEN`             | 自动生成 `<data-dir>/token`（0600）        | **密钥。** HELLO 鉴权 token                |
+| `SERIAL_HUB_SERVER_TOKEN_FILE`        | 未设置                                     | **密钥文件。** 从文件读取 hub token        |
 | `SERIAL_HUB_SERVER_LISTEN`            | `0.0.0.0:7000`                             | 监听地址                                   |
 | `SERIAL_HUB_SERVER_DATA_DIR`          | `~/.local/share/serial-hub-server`         | 数据与 token 目录                          |
 | `SERIAL_HUB_SERVER_PORTS`             | `/dev/ttyUSB,/dev/ttyACM,/dev/serial/,COM` | 端口路径子串或 `/regex/`；空字符串暴露全部 |
@@ -144,7 +160,26 @@ export LAB_HUB_TOKEN="$(cat /var/lib/serial-hub-server/token)"
 
 ## 密钥
 
-- `SERIAL_HUB_MCP_HTTP_TOKEN`、`SERIAL_HUB_SERVER_TOKEN` 和 `remotes.json` 里的 token 都是敏感值。
+| 密钥                        | 用途                                         | 读取顺序                                                                                                         |
+| --------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `SERIAL_HUB_MCP_HTTP_TOKEN` | `/mcp`、`/api/*`、`/dumps/*` 的 Bearer token | `SERIAL_HUB_MCP_HTTP_TOKEN` → `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`                                                   |
+| `SERIAL_HUB_SERVER_TOKEN`   | x86 hub 的 HELLO 鉴权                        | `--token` → `SERIAL_HUB_SERVER_TOKEN` → `SERIAL_HUB_SERVER_TOKEN_FILE` → `<data-dir>/token`（不存在则生成 0600） |
+
+规则：
+
+- **直接环境变量优先于 `*_FILE`**；两者都设置时以环境变量为准。
+- `*_FILE` 在启动时读取一次，去掉首尾空白。文件缺失、不可读或为空会直接退出，不会悄悄生成新
+  token 或使用空 token。
+- Docker/Kubernetes 建议用 secret 挂载文件：
+
+  ```bash
+  -e SERIAL_HUB_MCP_HTTP_TOKEN_FILE=/run/secrets/mcp_http_token \
+  -v /host/secrets/mcp_http_token:/run/secrets/mcp_http_token:ro
+  ```
+
+- `SERIAL_HUB_SERVER_TOKEN` 可以完全不放进环境变量：把 token 放在
+  `<data-dir>/token`（0600），hub 会直接读取。
+- 轮换：替换文件或环境变量后重启对应进程；HTTP token 不支持热加载。
 - 工具返回值、`profile_list`、`open_list` 里的 token 会打码；文件里仍是原值。
-- 优先用 `token_env`，不要把 token 写进镜像或命令行历史。
+- `remotes.json` 里的 token 优先用 `token_env`，不要把 token 提交到 git。
 - 远端链路和 HTTP 都是明文；只在可信 LAN/VPN/SSH 隧道里使用。

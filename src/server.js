@@ -31,6 +31,8 @@ import { keyedSerialQueue } from "./keyed_queue.js";
 import { buildTools } from "./tools/index.js";
 import { resolveDump } from "./dump_catalog.js";
 import { cacheTtlDays, startCacheSweep } from "./cache_ttl.js";
+import { readSecret } from "./secrets.js";
+import { buildHttpAllowlist } from "./http_allowlist.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -48,13 +50,26 @@ const httpPort = Number(argValue("--port") || process.env.SERIAL_HUB_MCP_HTTP_PO
 const httpPath = argValue("--path") || process.env.SERIAL_HUB_MCP_HTTP_PATH || "/mcp";
 const httpHealthPath = process.env.SERIAL_HUB_MCP_HTTP_HEALTH_PATH || "/health";
 const httpInfoPath = process.env.SERIAL_HUB_MCP_HTTP_INFO_PATH || "/info";
-const httpToken = process.env.SERIAL_HUB_MCP_HTTP_TOKEN || undefined;
 const httpUiEnabled = process.env.SERIAL_HUB_MCP_HTTP_UI !== "0";
 const httpAllowAnonymous =
   process.argv.includes("--allow-anonymous") ||
   process.env.SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS === "1";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 const httpBindIsLoopback = LOOPBACK_HOSTS.has(httpHost);
+const { allowedHosts: httpAllowedHosts, allowedOrigins: httpAllowedOrigins } = buildHttpAllowlist({
+  host: httpHost,
+  port: httpPort,
+});
+
+let httpToken;
+if (httpMode) {
+  try {
+    httpToken = readSecret("SERIAL_HUB_MCP_HTTP_TOKEN");
+  } catch (err) {
+    process.stderr.write(`[${SERVICE}] 无法读取 HTTP token：${err.message}\n`);
+    process.exit(1);
+  }
+}
 
 // 非回环地址 + 无 token 默认拒绝启动，避免“能连上端口就能操作串口”。
 if (httpMode && !httpToken && !httpBindIsLoopback) {
@@ -135,6 +150,8 @@ if (httpMode) {
     healthPath: httpHealthPath,
     infoPath: httpInfoPath,
     token: httpToken,
+    ...(httpAllowedHosts ? { allowedHosts: httpAllowedHosts } : {}),
+    ...(httpAllowedOrigins ? { allowedOrigins: httpAllowedOrigins } : {}),
     webDir: httpUiEnabled ? fileURLToPath(new URL("./web/", import.meta.url)) : undefined,
     apiHandler: httpUiEnabled ? createWebApi({ manager, tools, queue }) : undefined,
     health: { ok: true, service: SERVICE, version: pkg.version, transport: "http" },

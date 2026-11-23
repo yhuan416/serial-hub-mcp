@@ -162,6 +162,8 @@ Common variables; the full table is in [docs/configuration.md](docs/configuratio
 | `SERIAL_HUB_MCP_PROFILES_DIR`   | `$XDG_CONFIG_HOME/serial-hub-mcp`              | Directory containing `profiles.json`                      |
 
 Paths use `$XDG_CACHE_HOME` (default `~/.cache`) and `$XDG_CONFIG_HOME` (default `~/.config`).
+Secrets also support `<NAME>_FILE` for Docker/Kubernetes secret files; a direct environment
+variable wins over the file. See [docs/configuration.md](docs/configuration.md#密钥).
 
 ## Deployment
 
@@ -225,8 +227,22 @@ Release steps (version bump, tags, Harbor image, deployment) are in
 - The remote link and HTTP transport are plaintext. Use a trusted LAN, VPN, or SSH tunnel.
 - Binding a non-loopback HTTP address without `SERIAL_HUB_MCP_HTTP_TOKEN` is refused unless
   `--allow-anonymous` / `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1` is set explicitly.
+- Loopback HTTP binds validate `Host` and `Origin` against `127.0.0.1` / `localhost` by default
+  (DNS rebinding protection). Override with `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS` /
+  `SERIAL_HUB_MCP_HTTP_ALLOWED_ORIGINS` when using a hostname or reverse proxy.
 - Tokens are masked in tool output and `open_list`; prefer `token_env` in `remotes.json`.
 - Report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
+
+### Secrets
+
+| Secret                      | Purpose                                       | Source                                                            | Handling                                                     |
+| --------------------------- | --------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------ |
+| `SERIAL_HUB_MCP_HTTP_TOKEN` | Bearer token for `/mcp`, `/api/*`, `/dumps/*` | env or `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`                           | Constant-time compare; never logged; masked                  |
+| `SERIAL_HUB_SERVER_TOKEN`   | HELLO auth for the x86 hub                    | env, `SERIAL_HUB_SERVER_TOKEN_FILE`, or `<data-dir>/token` (0600) | `timingSafeEqual`; never logged; masked in `open` / profiles |
+
+Direct env wins over `*_FILE`. A missing or empty `*_FILE` aborts startup instead of silently
+generating a new token. Prefer Docker/Kubernetes secrets mounted as files; see
+[docs/configuration.md](docs/configuration.md#密钥).
 
 ## License
 
