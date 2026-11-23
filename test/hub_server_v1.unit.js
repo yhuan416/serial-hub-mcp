@@ -345,7 +345,8 @@ test("v1: cache_set 不改活着的 capture，claim_writer 认字符串", async 
 
 test("非 SH 首帧直接断开", async (t) => {
   const { port } = await setup(t);
-  const socket = net.connect(port);
+  // 显式用 IPv4：CI 上 localhost 可能先解析到 ::1，而 hub 只监听 127.0.0.1。
+  const socket = net.connect({ port, host: "127.0.0.1" });
   await new Promise((resolve, reject) => {
     socket.once("connect", resolve);
     socket.once("error", reject);
