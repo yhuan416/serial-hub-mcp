@@ -14,7 +14,7 @@ body:
     attributes:
       label: Version
       description: Output of `service_info` or the package/image version.
-      placeholder: "0.3.2"
+      placeholder: "0.3.3"
     validations:
       required: true
 

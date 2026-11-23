@@ -50,7 +50,7 @@ SERIAL_HUB_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" \
 镜像只做 MCP 中心，不挂串口；本机串口由旁边的 `serial-hub-server` 通过 TCP 暴露。
 
 ```bash
-docker build -f docker/serial-hub-mcp.Dockerfile -t serial-hub-mcp:0.3.2 .
+docker build -f docker/serial-hub-mcp.Dockerfile -t serial-hub-mcp:0.3.3 .
 
 docker run -d --name serial-hub-mcp --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
@@ -58,7 +58,7 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
   -e SERIAL_HUB_MCP_HTTP_TOKEN="$(cat ~/.config/serial-hub-mcp/http.token)" \
   -v ~/.local/share/serial-hub-mcp:/data \
   -v ~/.config/serial-hub-mcp:/config:ro \
-  serial-hub-mcp:0.3.2
+  serial-hub-mcp:0.3.3
 
 # 更推荐：token 走文件，避免出现在 docker inspect 的环境变量里
 docker run -d --name serial-hub-mcp --restart unless-stopped \
@@ -68,7 +68,7 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
   -v ~/.local/share/serial-hub-mcp:/data \
   -v ~/.config/serial-hub-mcp:/config:ro \
   -v ~/.config/serial-hub-mcp/http.token:/run/secrets/mcp_http_token:ro \
-  serial-hub-mcp:0.3.2
+  serial-hub-mcp:0.3.3
 ```
 
 镜像里已经设置：
@@ -135,8 +135,8 @@ sudo cat /var/lib/serial-hub-server/token
 
 ```bash
 docker build -f docker/serial-hub-mcp.Dockerfile \
-  -t harbor.example.com/ipcs/serial-hub-mcp:0.3.2 .
-docker push harbor.example.com/ipcs/serial-hub-mcp:0.3.2
+  -t harbor.example.com/ipcs/serial-hub-mcp:0.3.3 .
+docker push harbor.example.com/ipcs/serial-hub-mcp:0.3.3
 ```
 
 Harbor 是私有的，没有公开 pulls badge；README 里不要放会 404 的 npm/Docker 动态徽章。
@@ -150,7 +150,7 @@ MCP 的连接、capture、读游标都在进程内存里，替换容器会让当
 ```bash
 # 升级
 docker rm -f serial-hub-mcp
-docker run -d ... harbor.example.com/ipcs/serial-hub-mcp:0.3.2
+docker run -d ... harbor.example.com/ipcs/serial-hub-mcp:0.3.3
 
 # 回滚：把镜像 tag 换回 0.3.1
 ```

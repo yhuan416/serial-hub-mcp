@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.3.3 — 2026-11-23
+
 - 重构 README：中英文保持同一结构，徽章置顶，快速开始前置；安装说明改为源码 + `npm link`
   （npm 尚未发布），补充 Security 和 Mermaid 架构图。
 - 拆分文档：新增 getting-started、tools、configuration、deployment、storage、troubleshooting、
@@ -117,7 +119,7 @@ All notable changes to this project are documented here.
 - **Configured remotes**: `remotes.json` / env registry; `list_ports` aggregates local +
   all configured remotes in parallel; `open({remote})` resolves endpoint/token.
 - **x86 hub Docker**: multi-stage image, compose for n100, Harbor publish
-  (`harborcn.fujikam.com:14743/ipcs/serial-hub-server`), `/run/udev` for device metadata.
+  (`harbor.example.com/ipcs/serial-hub-server`), `/run/udev` for device metadata.
 - MCP usability: `include_hex` auto-trim, remote `list_ports(endpoint/remote)`, log-question
   timeouts reduced (remote LOG_STATS no longer on the filtered query path).
 

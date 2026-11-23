@@ -29,7 +29,7 @@ node src/hub-server/index.js --listen 0.0.0.0:7000 \
 启动输出示例：
 
 ```
-[serial-hub-server] v0.1.0 listening on 0.0.0.0:7000
+[serial-hub-server] v0.3.3 listening on 0.0.0.0:7000
 [serial-hub-server] data-dir=/var/lib/serial-hub-server token-source=file (/var/lib/serial-hub-server/token)
 [serial-hub-server] ports=2 (ttyACM1, ttyACM0)
 ```

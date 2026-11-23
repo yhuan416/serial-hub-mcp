@@ -1,4 +1,4 @@
-# n100 (192.168.4.50) — 讯美 wifi/dsp 两路 USB 串口
+# n100 — 讯美 wifi/dsp 两路 USB 串口
 #
 #   cp docker/serial-hub-server.env.example docker/serial-hub-server.env
 #   # 编辑 token
@@ -24,7 +24,7 @@ services:
       - ./serial-hub-server.env
     # 不写死 ttyACM0。绑定 /dev，按设备号放行 ttyACM/ttyUSB。
     volumes:
-      - /home/yhuan/.local/share/serial-hub-server-docker:/data
+      - /var/lib/serial-hub-server:/data
       - /dev:/dev
       - /run/udev:/run/udev:ro
     device_cgroup_rules:
