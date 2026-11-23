@@ -20,4 +20,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      - name: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test.log
+      - name: Report test failure as annotation
+        if: failure()
+        run: |
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const text = fs.existsSync("test.log") ? fs.readFileSync("test.log", "utf8") : "";
+          const lines = text.split(/\r?\n/);
+          const idx = lines.findIndex((line) => /^not ok /.test(line));
+          const block =
+            idx >= 0 ? lines.slice(Math.max(0, idx - 2), idx + 28).join("\n") : text.slice(-4000);
+          const message = block.replace(/\r/g, "").replace(/\n/g, "%0A");
+          console.log(`::error title=test failure::${message}`);
+          NODE
