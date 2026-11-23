@@ -248,3 +248,8 @@ Remote-link tests start an in-process hub over TCP. They need neither hardware n
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+---
+[![M8ven Verified](https://m8ven.ai/badge/mcp/yhuan416-serial-hub-mcp-j8uwb6?variant=verified&v=8e8a2b8dc7fb5663bd949718554bf8a8)](https://m8ven.ai/mcp/yhuan416-serial-hub-mcp-j8uwb6?s=readme)
+
