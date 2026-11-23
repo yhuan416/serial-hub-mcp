@@ -5,11 +5,19 @@
 
 import { packResult, normalizeError } from "./result.js";
 
-export function defineTool({ name, title, description, inputSchema, handler, hidden = false }) {
+export function defineTool({
+  name,
+  title,
+  description,
+  inputSchema,
+  annotations,
+  handler,
+  hidden = false,
+}) {
   if (!name || typeof handler !== "function") {
     throw new Error("defineTool: name 与 handler 必填");
   }
-  return { name, title, description, inputSchema, handler, hidden };
+  return { name, title, description, inputSchema, annotations, handler, hidden };
 }
 
 /**
@@ -31,6 +39,7 @@ export function registerTools(server, tools, { queue } = {}) {
         ...(tool.title ? { title: tool.title } : {}),
         description: tool.description,
         inputSchema: tool.inputSchema,
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
       },
       (args) => dispatch(tool, args, queue),
     );

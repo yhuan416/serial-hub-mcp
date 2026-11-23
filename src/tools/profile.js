@@ -35,6 +35,12 @@ export function profileTools() {
   return [
     defineTool({
       name: "profile_list",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       title: "列出连接 profile",
       description: "列出已保存的串口连接 profile（端口、波特率、换行）。token 不回明文。",
       inputSchema: z.object({}),
@@ -47,6 +53,12 @@ export function profileTools() {
     }),
     defineTool({
       name: "profile_save",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       title: "保存连接 profile",
       description:
         "把常见连接参数存为命名 profile，供 open({profile}) 一条复用。返回里的 token 为 ***，文件里仍是原值。",
@@ -79,6 +91,12 @@ export function profileTools() {
     }),
     defineTool({
       name: "profile_delete",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       title: "删除连接 profile",
       description: "删除指定命名 profile。",
       inputSchema: z.object({ name: z.string().min(1).describe("profile 名") }),

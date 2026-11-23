@@ -193,6 +193,12 @@ async function listLocalPorts() {
 export const connTools = (manager) => [
   defineTool({
     name: "list_ports",
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     title: "列出串口",
     description:
       "枚举串口。默认枚举本机，并自动汇总所有已配置 remote 的端口列表（见 ~/.config/serial-hub-mcp/remotes.json）。" +
@@ -304,6 +310,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "open",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     title: "打开串口",
     description:
       "打开一个串口连接。定位端口三选一：port（路径）/ profile（命名参数）/ sn|vid|pid（按设备标识自动找）。" +
@@ -436,6 +448,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "open_list",
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     title: "已打开过的会话",
     description:
       "列出成功打开过的端口索引。同一 endpoint+port_id+波特率只留一行，重复打开只更新时间和次数。不存 token。",
@@ -448,6 +466,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "close",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     title: "关闭串口",
     description: "关闭一个之前打开的串口连接。",
     inputSchema: z.object({ connection_id: connId }),
@@ -456,6 +480,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "write",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     title: "发送串口数据",
     description:
       "向串口发送数据（只发不收）。data 为字符串，encoding 决定解码方式：" +
@@ -480,6 +510,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "read",
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     title: "读取串口数据",
     description:
       "读取串口已到达的数据。默认立即返回所有未读字节（cat 语义）。" +
@@ -519,6 +555,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "transact",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     title: "收发交互（写+读）",
     description:
       "写入数据后等待回包，在一步内完成，是 AT/Modbus/GRBL 等请求响应式交互的推荐入口。" +
@@ -553,6 +595,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "get_status",
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     title: "连接状态",
     description:
       "查看指定连接（或多个连接）的打开状态、波特率、收发字节数、剩余未读字节。connection_id 省略则列出全部连接。返回里的 token 为 ***。",
@@ -570,6 +618,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "set_dtr_rts",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     title: "设置 DTR/RTS 控制线",
     description:
       "设置串口 DTR/RTS 调制解调控制线电平。未传的线保持不动。" +
@@ -602,6 +656,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "send_break",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     title: "发送 BREAK 信号",
     description:
       "向串口发送 BREAK 信号并释放（保持 duration_ms 后释放）。常用于唤醒/复位只认 BREAK 的设备。duration_ms 默认 300。",
@@ -624,6 +684,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "receive",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     title: "统一接收窗口（持续收流量直到结束）",
     description:
       "持续消费全部到达流量，直到命中 match(字节)、达到 max_bytes、静默 idle_timeout_ms、或 budget_ms 耗尽。" +
@@ -687,6 +753,12 @@ export const connTools = (manager) => [
 
   defineTool({
     name: "dump_to_file",
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     title: "导出已缓存的一段",
     description:
       "把 host 已有缓存导出成文件，立刻返回 file_id / sha256 / download_path。不读新数据，不移动 read 游标。" +

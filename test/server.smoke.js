@@ -40,6 +40,20 @@ test("smoke: 握手 + 工具枚举（19 个）", async () => {
     const { tools } = await sdk.listTools();
     const names = tools.map((t) => t.name).sort();
     assert.deepEqual(names, [...TOOLS].sort());
+
+    // OpenAI 目录等客户端要求四个 hint 全部是显式布尔值。
+    for (const tool of tools) {
+      const annotations = tool.annotations;
+      assert.ok(annotations, `${tool.name}: 缺少 annotations`);
+      for (const key of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"]) {
+        assert.equal(typeof annotations[key], "boolean", `${tool.name}: ${key} 必须是显式布尔值`);
+      }
+    }
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    assert.equal(byName.get("list_ports").annotations.readOnlyHint, true);
+    assert.equal(byName.get("open").annotations.openWorldHint, true);
+    assert.equal(byName.get("read").annotations.readOnlyHint, true);
+    assert.equal(byName.get("log_clear").annotations.destructiveHint, true);
   } finally {
     await client.close();
   }

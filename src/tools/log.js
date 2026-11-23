@@ -11,6 +11,12 @@ export const logTools = (logStore) => {
   return [
     defineTool({
       name: "log_query",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       title: "检索串口日志",
       description:
         "检索 host 已切开的串口日志。日志按行切分（\\n / \\r\\n），每条含 seq、epoch 时间戳 ts、方向 dir(rx/tx)、内容 line。" +
@@ -49,6 +55,12 @@ export const logTools = (logStore) => {
 
     defineTool({
       name: "log_stats",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       title: "串口日志统计",
       description:
         "查看日志存储统计：各连接的日志总条数、内存/磁盘分布、分区/淘汰信息、时间范围、目录路径；省略 connection_id 时聚合本地与所有远端连接。",
@@ -63,6 +75,12 @@ export const logTools = (logStore) => {
 
     defineTool({
       name: "log_clear",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       title: "清空串口日志",
       description:
         "清空 host 上已切开的日志。远端只清 host 缓存，不清设备。清空后不可恢复。" +

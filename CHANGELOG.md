@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.3.1 — 2026-11-23
+
+- 升级 `zod` 到 4.6.7（`@modelcontextprotocol/sdk` 同时支持 zod 3/4），修复
+  GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404：超大数组校验可能耗尽内存。工具 schema 与返回结构不变。
+- 为全部 19 个工具补充 MCP `annotations` 四个布尔 hint（`readOnlyHint` /
+  `destructiveHint` / `idempotentHint` / `openWorldHint`），满足 OpenAI 目录等客户端要求；
+  smoke 测试增加断言，防止回退。
+
 ## 0.3.0 — 2026-11-17
 
 - host 侧本地日志新增 `HostLogStore`（默认 `SERIAL_HUB_MCP_STORE=v2`）：按行写二进制 segment（CRC/offset），SQLite(WAL) 只存 segment/block 索引；查询按 seq/时间裁剪 block，支持段轮转、7 天/字节保留、崩溃尾段恢复。远端 v1 会话的 host 缓存也已接入同一引擎（local/remote 分目录，避免 LogRouter 全量查询重复计数）；远端 hub-server 自己的 ring/capture 不变。

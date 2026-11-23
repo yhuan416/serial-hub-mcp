@@ -41,6 +41,12 @@ export function buildServiceInfo(opts = {}) {
 export function createServiceInfoTool(opts = {}) {
   return defineTool({
     name: opts.name || "service_info",
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     description:
       opts.description ||
       "返回服务信息：服务名/版本/端点/（可选）变更摘要(changelog)，用于确认部署版本与接入方式。",
