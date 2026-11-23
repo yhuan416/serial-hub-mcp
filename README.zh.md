@@ -1,252 +1,223 @@
 # serial-hub-mcp
 
-串口 MCP，也是一个 hub：一个进程里可以同时握着本机 UART，以及远端串口。远端可以是 ESP32-S3 无线桥（[`serial-hub-bridge`](https://github.com/yhuan416/serial-hub-bridge)），也可以是跑在 Linux 上的 `serial-hub-server`。
+> 一个 MCP server，同时管理本机 UART 和远端串口 —— 字节透明、日志可查、自带网页终端。
 
-字节面保持透明：进什么出什么，不组帧、不判读。日志在 host 上按行切开再检索。远端只保留还没被 ACK 的待发送字节。
+[![CI](https://github.com/yhuan416/serial-hub-mcp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/yhuan416/serial-hub-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/tag/yhuan416/serial-hub-mcp?label=release&style=flat-square)](https://github.com/yhuan416/serial-hub-mcp/tags)
+[![License](https://img.shields.io/github/license/yhuan416/serial-hub-mcp?style=flat-square)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white&style=flat-square)](https://nodejs.org/)
+[![M8ven Verified](https://m8ven.ai/badge/mcp/yhuan416-serial-hub-mcp-j8uwb6?variant=verified)](https://m8ven.ai/mcp/yhuan416-serial-hub-mcp-j8uwb6?s=readme)
 
-English: [README.md](README.md)。
+English: [README.md](README.md)
 
-## 目录
+**目录：** [快速开始](#快速开始) · [工具](#工具) · [配置](#配置) · [部署](#部署)
+· [文档](#文档) · [安全](#安全)
 
-```
-src/server.js            MCP 入口（stdio / HTTP）
-src/connection.js        连接管理。远端一律走二进制会话
-src/tools/               MCP 工具：conn / log / profile
-src/remote/              帧编解码与 host 侧客户端
-src/hub-server/          x86 serial-hub-server
-src/links/               本机串口
-src/sdk/                 MCP HTTP / 工具注册
-docker/                  hub 镜像与 compose
-docs/                    协议、远端配置、部署
-test/                    单测与 smoke
-```
+`serial-hub-mcp` 既是 MCP server，也是串口 hub。一个进程里可以同时握着多个本机 UART，以及
+远端串口：ESP32-S3 无线桥，或跑在 Linux 上的 `serial-hub-server`（暴露该机器的所有串口）。
 
-`package.json` 的 `bin`：`serial-hub-mcp` → `src/server.js`，`serial-hub-server` → `src/hub-server/index.js`。不要挪这两个入口。
+字节面保持透明：进什么出什么，不组帧、不判读提示符/正则，内容判断交给 agent。host 负责按行
+切分、分配日志 `seq` 和保存原始 hex。
 
-## 安装
+## 为什么
+
+- **本机/远端同一套接口**：不管端口在本机、ESP32 还是另一台 Linux，agent 都用同一组
+  `read` / `write` / `transact` / `receive`。
+- **字节透明**：没有隐藏组帧或提示符解析，设备发什么 agent 就看到什么。
+- **host 侧持久日志**：按 seq、时间、方向、内容检索；远端只保留还没被 ACK 的字节。
+- **可运维**：profile、打开记录、DTR/RTS/BREAK、dump/下载，以及网页终端。
+
+## 特性
+
+- **stdio + Streamable HTTP** 两种传输；可选 Bearer 鉴权，`/health` / `/info` 免鉴权。
+- **本机串口**：基于 `serialport`，支持路径、profile、`sn` / `vid` / `pid`、波特率、校验、流控。
+- **字节级 I/O**：`read`（cat）、`transact`（写完等回包，忽略写前噪声）、
+  `receive`（窗口式采集）、`dump_to_file`（导出缓存片段）。
+- **控制线**：DTR/RTS（可脉冲复位）和 BREAK。
+- **持久日志**：默认 v2 二进制 segment + SQLite(WAL) block 索引；仍可用 `legacy` JSONL。
+- **profile 与 remote**：保存常用参数、注册远端，`list_ports` 并行汇总本机和远端端口。
+- **远端 v1 链路**：二进制 BATCH、ACK 流控、capture 续传、单 writer。
+- **网页界面**：`--http` 下提供 xterm 终端、实时 RX/TX、历史加载和下载。
+
+## 快速开始
+
+### 环境要求
+
+- Node.js >= 18（CI 覆盖 18/20/22；Docker 镜像用 Node 22）。
+- Linux：把用户加进 `dialout`，否则打不开 `/dev/ttyUSB*` / `/dev/ttyACM*`。
+- 可选：Docker，用于跑 x86 `serial-hub-server`。
+
+### 从源码安装
+
+目前还没有发布到 npm。
 
 ```bash
-npm install -g serial-hub-mcp
+git clone https://github.com/yhuan416/serial-hub-mcp.git
+cd serial-hub-mcp
+npm ci
+
+node src/server.js          # stdio
+node src/server.js --http   # HTTP + 网页界面，默认 127.0.0.1:8787
 ```
 
-需要 Node.js >= 18。Linux 上把用户加进 `dialout`，否则打不开 `/dev/ttyUSB*`、`/dev/ttyACM*`。
+可选：`npm link` 后，`serial-hub-mcp` 和 `serial-hub-server` 会进入 PATH。
 
-## 客户端
+### MCP 客户端配置
 
 stdio：
 
 ```json
 {
   "mcpServers": {
-    "serial": { "command": "serial-hub-mcp" }
+    "serial": {
+      "command": "node",
+      "args": ["/absolute/path/to/serial-hub-mcp/src/server.js"]
+    }
   }
 }
 ```
 
-HTTP：
+`npm link` 之后，`"command": "serial-hub-mcp"` 即可。
+
+Streamable HTTP：
 
 ```bash
-serial-hub-mcp --http
-SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http --host 0.0.0.0 --port 8787
+SERIAL_HUB_MCP_HTTP_TOKEN=change-me node src/server.js --http --host 0.0.0.0 --port 8787
 ```
 
-默认只听 `127.0.0.1:8787/mcp`。绑到非本机地址时必须设置 token，否则拒绝启动；确需匿名访问要显式加 `--allow-anonymous` 或 `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1`（不建议）。`GET /health` 和 `GET /info` 不鉴权，也不带密钥。
+```json
+{
+  "mcpServers": {
+    "serial-hub": {
+      "type": "http",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": { "Authorization": "Bearer change-me" }
+    }
+  }
+}
+```
 
-### 调试页面
+绑非回环地址必须设 token；见 [安全](#安全)。
 
-`--http` 启动后，浏览器打开 `http://127.0.0.1:8787/` 就是一个简易串口监视器：
-
-- 每个连接一个 tab，只渲染当前 tab；后台 tab 继续缓存并显示未读标记；
-- `终端 | 日志` 两个视图：终端用内置 xterm.js，按键即时发送（Ctrl/方向键/Tab/Esc/粘贴），ANSI/光标/清屏/滚回正常；日志保留时间戳、历史、下载；
-- 终端可按设备切换 `Enter`（CR/CRLF/LF）和 `Backspace`（DEL/BS）映射；输入绕过 MCP 连接队列，agent 在 `receive` 时也能打字；
-- 实时显示 RX/TX，带毫秒时间戳，自动滚到底，可暂停、清屏；
-- 高码率数据按 ~80ms 合并推送，避免上千行/秒把页面刷爆；
-- `更早` 从服务端缓存加载历史，`下载` 把当前连接的缓存导出成文件；
-- 发送框（文本 + CR/LF/CRLF），语义与 `write` 工具一致。
-
-页面是静态 HTML，免鉴权；`/api/*` 仍要同一个 Bearer token，页面会提示输入。设
-`SERIAL_HUB_MCP_HTTP_UI=0` 可关闭页面。它只能看到同一个 `--http` 进程里的连接；
-stdio 模式没有页面。
-
-## 工具
-
-| 工具 | 作用 |
-|---|---|
-| `list_ports` | 本机端口，并汇总 `remotes.json` 里每个远端 |
-| `open` / `close` | 打开、关闭。远端用 `remote` 或 `endpoint`+`token`。第二路要写传 `claim_writer:true` |
-| `read` / `write` / `transact` | 读、写、写完等回包 |
-| `receive` | 观察一段时间 |
-| `dump_to_file` | 按 seq、时间或 offset 导出已有缓存，不读新数据 |
-| `set_dtr_rts` / `send_break` | 控制线与 BREAK |
-| `get_status` | 连接状态、计数、是否在重连 |
-| `open_list` | 查这个口开过什么波特率、叫什么名字 |
-| `log_query` / `log_stats` / `log_clear` | 查 host 上已经切开的日志 |
-| `profile_*` | 保存常用连接参数 |
-| `service_info` | 版本与 changelog |
-
-## 快速开始
-
-远端名字写在 `~/.config/serial-hub-mcp/remotes.json`，见 [docs/remotes.md](docs/remotes.md)。
+### 第一次调用
 
 ```text
 list_ports()
-open({ remote: "esp32-s3", port_id: "uart1", baud_rate: 1500000 })
-open({ remote: "n100", port_id: "ttyACM0", baud_rate: 115200 })
-receive({ connection_id: "...", budget_ms: 5000 })
+open({ port: "/dev/ttyUSB0", baud_rate: 115200 })
+receive({ connection_id: "...", start: "flush", budget_ms: 5000 })
+transact({ connection_id: "...", data: "AT", newline: "crlf", match: "OK" })
 close({ connection_id: "..." })
 ```
 
-不写名字也可以：
+远端：
 
 ```text
-open({
-  transport: "remote",
-  endpoint: "tcp://<bridge-ip>:7000",
-  token: "<token>",
-  port_id: "uart1",
-  baud_rate: 1500000
-})
+open({ remote: "lab-x86", port_id: "ttyACM0", baud_rate: 921600 })
+open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", port_id: "uart1" })
 ```
 
-链路是明文 TCP。只在局域网或 VPN 里用。
+## 工具
 
-`log_query` / `dump_to_file` 不传 `time_from` 会带回缓存里更早的数据。只要开始观察之后的，先取当前 epoch ms 再传 `time_from`。`receive` 默认从读游标接着收，可能含旧字节；`start=flush` 把游标跳到当前最新字节，只收之后新到的，不清缓存。
+| 工具                                               | 作用                                          |
+| -------------------------------------------------- | --------------------------------------------- |
+| `list_ports`                                       | 本机端口 + 所有已配置远端                     |
+| `open` / `close`                                   | 打开/关闭连接                                 |
+| `open_list`                                        | 打开过的端口，按 endpoint/port/baud 去重      |
+| `get_status`                                       | 状态、计数、控制线电平                        |
+| `read`                                             | 从读游标读取字节                              |
+| `write`                                            | 发送字节                                      |
+| `transact`                                         | 写入后等待回包                                |
+| `receive`                                          | 采集窗口，直到 match / 静默 / 预算 / 字节上限 |
+| `dump_to_file`                                     | 按 seq、时间或 offset 导出缓存                |
+| `set_dtr_rts` / `send_break`                       | 控制线与 BREAK                                |
+| `profile_list` / `profile_save` / `profile_delete` | 连接参数复用                                  |
+| `log_query` / `log_stats` / `log_clear`            | 查询、统计、清空 host 日志                    |
+| `service_info`                                     | 服务名、版本、changelog                       |
+
+完整参数、示例和只读/破坏性提示：[docs/tools.md](docs/tools.md)。
 
 ## 配置
 
-路径默认按 XDG（`$XDG_CACHE_HOME` → `~/.cache`，`$XDG_CONFIG_HOME` → `~/.config`），都可用环境变量覆盖：
+常用变量；完整表见 [docs/configuration.md](docs/configuration.md)。
 
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `SERIAL_HUB_MCP_LOGS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/logs` | `STORE=legacy` 时的 JSONL 日志分片 |
-| `SERIAL_HUB_MCP_LOG_MEM` | `1000` | 每进程内存日志条数 |
-| `SERIAL_HUB_MCP_LOG_RETAIN_BYTES` | `67108864`（64 MiB/连接） | 旧日志磁盘保留；`<=0` 不淘汰 |
-| `SERIAL_HUB_MCP_LOG_PART_BYTES` | `8388608`（8 MiB） | 旧日志分片轮转大小 |
-| `SERIAL_HUB_MCP_OPENS_FILE` | `$XDG_CACHE_HOME/serial-hub-mcp/opens.json` | `open_list` 索引 |
-| `SERIAL_HUB_MCP_PROFILES_DIR` | `$XDG_CONFIG_HOME/serial-hub-mcp` | `profiles.json` 所在目录 |
-| `SERIAL_HUB_MCP_REMOTES` | 未设置 | 内联 remotes JSON（优先级最高） |
-| `SERIAL_HUB_MCP_REMOTES_FILE` | `$XDG_CONFIG_HOME/serial-hub-mcp/remotes.json` | 远端注册表文件 |
-| `SERIAL_HUB_MCP_DUMPS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/dumps` | `dump_to_file` 输出 |
-| `SERIAL_HUB_MCP_SYNC_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/remote-sync` | 旧 remote-sync 缓存 |
-| `SERIAL_HUB_MCP_V1_CACHE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cache` | 未启用 v2 store 时的 v1 host 缓存 |
-| `SERIAL_HUB_MCP_V1_STATE_FILE` | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cursors.json` | v1 续传游标 |
-| `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7` | 日志、dump、捕获缓存保留天数；`0` 关闭 |
-| `SERIAL_HUB_MCP_HTTP` | 未设置 | `1` 启用 HTTP（等价 `--http`） |
-| `SERIAL_HUB_MCP_HTTP_HOST` | `127.0.0.1` | HTTP 绑定地址 |
-| `SERIAL_HUB_MCP_HTTP_PORT` | `8787` | HTTP 绑定端口 |
-| `SERIAL_HUB_MCP_HTTP_PATH` | `/mcp` | MCP 端点路径 |
-| `SERIAL_HUB_MCP_HTTP_HEALTH_PATH` | `/health` | 健康检查（免鉴权） |
-| `SERIAL_HUB_MCP_HTTP_INFO_PATH` | `/info` | 服务信息（免鉴权） |
-| `SERIAL_HUB_MCP_HTTP_TOKEN` | 未设置 | **密钥。** `/mcp`、`/api/*`、`/dumps/*` 的 Bearer token；绑非回环地址时必填，除非显式允许匿名 |
-| `SERIAL_HUB_MCP_HTTP_UI` | `1` | `0` 关闭网页调试界面 |
-| `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS` | 未设置 | `1` 允许非回环地址无 token 启动（**危险**） |
+| 变量                            | 默认                                           | 说明                                         |
+| ------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `SERIAL_HUB_MCP_HTTP`           | 未设置                                         | `1` 启用 HTTP 模式                           |
+| `SERIAL_HUB_MCP_HTTP_HOST`      | `127.0.0.1`                                    | HTTP 绑定地址                                |
+| `SERIAL_HUB_MCP_HTTP_PORT`      | `8787`                                         | HTTP 绑定端口                                |
+| `SERIAL_HUB_MCP_HTTP_TOKEN`     | 未设置                                         | **密钥。** Bearer token；绑非回环地址时必填  |
+| `SERIAL_HUB_MCP_HTTP_UI`        | `1`                                            | `0` 关闭网页界面                             |
+| `SERIAL_HUB_MCP_STORE`          | `v2`                                           | `v2`（segment + SQLite）或 `legacy`（JSONL） |
+| `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7`                                            | 日志/dump/捕获保留天数；`0` 关闭             |
+| `SERIAL_HUB_MCP_REMOTES_FILE`   | `$XDG_CONFIG_HOME/serial-hub-mcp/remotes.json` | 远端注册表                                   |
+| `SERIAL_HUB_MCP_PROFILES_DIR`   | `$XDG_CONFIG_HOME/serial-hub-mcp`              | `profiles.json` 目录                         |
 
-### host 缓存存储
+路径默认按 `$XDG_CACHE_HOME`（`~/.cache`）和 `$XDG_CONFIG_HOME`（`~/.config`）。
 
-hub-mcp 本机日志默认使用 `SERIAL_HUB_MCP_STORE=v2`：按行写二进制 segment，SQLite(WAL) 只存
-segment/block 索引，`log_query`/历史/`dump_to_file` 按 seq、时间或 offset 只读需要的 block。
-`SERIAL_HUB_MCP_STORE=legacy` 可回到旧的 JSONL 分片实现。
+## 部署
 
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `SERIAL_HUB_MCP_STORE` | `v2` | `v2` 或 `legacy` |
-| `SERIAL_HUB_MCP_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/local` | 本地连接 v2 目录 |
-| `SERIAL_HUB_MCP_REMOTE_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/remote` | 远端 v1 host 缓存目录 |
-| `SERIAL_HUB_MCP_STORE_RETAIN_BYTES` | 512 MiB/连接 | v2 每连接磁盘上限，`<=0` 不按字节淘汰 |
-| `SERIAL_HUB_MCP_STORE_SEGMENT_BYTES` | 16 MiB | 单段大小 |
-| `SERIAL_HUB_MCP_STORE_BLOCK_BYTES` | 1 MiB | block 索引粒度 |
-| `SERIAL_HUB_MCP_STORE_FLUSH_MS` | 500 | 批量落盘间隔 |
+- **stdio**：在 MCP 客户端里直接运行 `node src/server.js`。
+- **Streamable HTTP**：`--http` 提供 `/mcp`、`/health`、`/info`、`/dumps/<file_id>` 和网页界面。
+- **Docker MCP**：[docker/serial-hub-mcp.Dockerfile](docker/serial-hub-mcp.Dockerfile) 与
+  [docker/](docker/) 下的 compose。
+- **x86 串口服务**：[docs/x86-hub-server.md](docs/x86-hub-server.md)。
+- **远端注册表**：[docs/remotes.md](docs/remotes.md)。
 
-v2 同时覆盖本地串口和远端 v1 会话在 hub-mcp 侧的日志；远端 hub-server 自己的 ring/capture
-不变。旧 JSONL 不会自动导入；要看旧数据先切 `legacy`。
+反向代理、Docker 挂载、systemd、Harbor、回滚等运维细节：
+[docs/deployment.md](docs/deployment.md)。
 
-### x86 hub-server 环境变量
+## 架构
 
-`serial-hub-server` 读取下列变量；命令行参数优先。完整参数与部署说明见
-[docs/x86-hub-server.md](docs/x86-hub-server.md)。
+```mermaid
+flowchart LR
+  A[MCP client] -->|stdio / HTTP| B[serial-hub-mcp]
+  B --> C[local UARTs]
+  B -->|TCP v1 SH frames| D[ESP32-S3 bridge]
+  B -->|TCP v1 SH frames| E[x86 serial-hub-server]
+  E --> F["/dev/ttyUSB*, ttyACM*"]
+```
 
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `SERIAL_HUB_SERVER_TOKEN` | 自动生成 `<data-dir>/token`（0600） | **密钥。** HELLO 鉴权 token |
-| `SERIAL_HUB_SERVER_LISTEN` | `0.0.0.0:7000` | 监听地址 |
-| `SERIAL_HUB_SERVER_DATA_DIR` | `~/.local/share/serial-hub-server` | 数据与 token 目录 |
-| `SERIAL_HUB_SERVER_PORTS` | `/dev/ttyUSB,/dev/ttyACM,/dev/serial/,COM` | 端口路径子串或 `/regex/`；空字符串暴露全部 |
-| `SERIAL_HUB_SERVER_RING_BYTES` | `64MiB` | 每端口环形缓冲 |
-| `SERIAL_HUB_SERVER_RETENTION_BYTES` | `4GiB` | 每端口磁盘保留 |
-| `SERIAL_HUB_SERVER_CAPTURE_LINGER_MS` | `60000` | 最后一个会话离开后 capture 保留时间 |
-| `SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES` | `128MiB` | 单 capture 发送缓存上限 |
-| `SERIAL_HUB_SERVER_WINDOW_BYTES` | `256KiB` | 默认每 session 窗口 |
-| `SERIAL_HUB_SERVER_MAX_WINDOW_BYTES` | `1MiB` | 每 session 窗口上限 |
-| `SERIAL_HUB_SERVER_LEASE_MS` | `120000` | session 租约超时 |
-
-## 发送缓存
-
-发送缓存和保留时间不进 MCP 工具列表。调试时用默认值即可。
-
-要改的话：
-
-- x86 hub：重启时设 `SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES`、`SERIAL_HUB_SERVER_RETENTION_DAYS`、`SERIAL_HUB_SERVER_LEASE_MS`。参数表见 [docs/x86-hub-server.md](docs/x86-hub-server.md)。
-- ESP32 桥：NVS 命名空间 `shb` 的 `cap_bytes`，默认 256KiB，范围 32KiB–2MiB，4KiB 对齐。也可对桥发 v1 控制帧 `{"op":"cache_set","cap_bytes":262144}`。`applied=next` 表示当前 capture 还用旧缓冲，最后一个会话离开并过 60 秒后新建才换。不是重启。
-- MCP 自己的日志、dump、捕获缓存默认留 7 天。`SERIAL_HUB_MCP_CACHE_TTL_DAYS=0` 关闭。要长期保存请 `dump_to_file` 后下载到本机。
-- `open` 不暴露窗口、租约、重连参数。已存 profile 里如果写过这些字段，打开时仍生效。返回和 `profile_list` 里的 token 是 `***`。
-
-RAM 满了会先把未 ACK 的字节溢到 SD（`/sdcard/shb-cache/`）。写失败才 GAP。x86 hub 的缓存大小用启动参数，不走这条 NVS。
+host 负责切行、`seq`、日志和读游标；远端只保留未 ACK 的字节。线格式见
+[docs/remote-link-protocol-v1.md](docs/remote-link-protocol-v1.md)。
 
 ## 文档
 
-| 文件 | 内容 |
-|---|---|
-| [docs/remote-link-protocol-v1.md](docs/remote-link-protocol-v1.md) | 现行链路契约 |
-| [docs/remotes.md](docs/remotes.md) | `remotes.json` |
-| [docs/x86-hub-server.md](docs/x86-hub-server.md) | x86 hub 部署 |
-| [docs/deploy/](docs/deploy/) | systemd 单元与 env 样例 |
-| [docs/hub-architecture.md](docs/hub-architecture.md) | 早期分层笔记，和现行契约不一致的地方以协议文档为准 |
-
-## Docker
-
-MCP 容器不挂串口。本机端口另起一个 `serial-hub-server`，MCP 用 TCP 访问它，和访问 n100、ESP32 一样。
-
-配置和缓存不进镜像，固定在宿主机：
-
-| 路径 | 内容 |
-|---|---|
-| `/var/lib/serial-hub-mcp/config/mcp.env` | HTTP token、各 hub 的 token |
-| `/var/lib/serial-hub-mcp/config/remotes.json` | 远端列表 |
-| `/var/lib/serial-hub-mcp/data/` | 日志、抓取、游标、v1 缓存 |
-| `/var/lib/serial-hub-server/server.env` | 本机 hub token |
-| `/var/lib/serial-hub-server/data/` | 本机 hub 数据 |
-
-```bash
-sudo mkdir -p /var/lib/serial-hub-mcp/{config,data} /var/lib/serial-hub-server/data
-sudo chown -R 1000:1000 /var/lib/serial-hub-mcp /var/lib/serial-hub-server
-sudo cp docker/serial-hub-mcp.env.example /var/lib/serial-hub-mcp/config/mcp.env
-sudo cp docker/serial-hub-server.env.example /var/lib/serial-hub-server/server.env
-sudo cp docker/remotes.json.example /var/lib/serial-hub-mcp/config/remotes.json
-docker compose -f docker/docker-compose.mcp.yml --profile local up -d
-```
-
-镜像名用 `serial-hub-mcp` 和 `serial-hub-server`，不写仓库地址。`LOCAL_HUB_TOKEN` 必须和本机 hub 的 `SERIAL_HUB_SERVER_TOKEN` 相同。agent 连 `http://<host>:8787/mcp`，带 `Authorization: Bearer <SERIAL_HUB_MCP_HTTP_TOKEN>`。多个 agent 共用这一份连接和日志。删容器不会丢 `/var/lib` 里的配置和缓存；正在开着的会话会断，重开后从游标续上。
-
-本机 hub 不要在部署文件里写死 `/dev/ttyACM0` 这种节点。hub 每 2 秒扫一次端口，但容器看得见不等于打得开：
-
-- 绑定宿主机 `/dev`，新节点才会出现在容器里。只读挂 `/run/udev`，`SerialPort.list()` 才能拿到串口信息。
-- 用设备号放行，不要按路径枚举：`c 166:* rmw` 是 ttyACM，`c 188:* rmw` 是 ttyUSB。不要放行 `c 4:*`（控制台和 ttyS）。
-- 进程要在 `dialout`（本机 gid 20）里。不要为了串口把容器设成 privileged。
-- 扫描会加入新口。设备节点消失后从列表去掉，正在打开的口会被关掉。
-
-本机 hub 按上面这套跑：绑定 `/dev`，放行 `c 166:*` 和 `c 188:*`，不再逐个 `--device`。没有 sudo 时，配置和数据可以放在 `~/.config/serial-hub-mcp` 与 `~/.local/share/serial-hub-server`，不必强行用 `/var/lib`。MCP 容器通过 Docker 网络访问 `tcp://serial-hub-server:7000`，不要写成容器里的 localhost。
+| 文档                                           | 内容                                 |
+| ---------------------------------------------- | ------------------------------------ |
+| [Getting started](docs/getting-started.md)     | 安装、客户端配置、第一次调用         |
+| [Tools](docs/tools.md)                         | 完整工具参考与示例                   |
+| [Configuration](docs/configuration.md)         | 全部环境变量与路径                   |
+| [Deployment](docs/deployment.md)               | stdio、HTTP、Docker、systemd、Harbor |
+| [Remotes](docs/remotes.md)                     | `remotes.json` 与 `list_ports` 汇总  |
+| [x86 hub-server](docs/x86-hub-server.md)       | 多端口 Linux 服务                    |
+| [Protocol v1](docs/remote-link-protocol-v1.md) | 二进制线格式契约                     |
+| [Storage](docs/storage.md)                     | 日志模型、v2 store、保留、dump       |
+| [Troubleshooting](docs/troubleshooting.md)     | 常见错误与排查                       |
+| [Development](docs/development.md)             | 测试、lint、CI、发布流程             |
 
 ## 开发
 
 ```bash
-npm install
-npm test
+npm ci
+npm test          # 单测 + stdio/HTTP smoke；不需要硬件
 npm run lint
+npm run smoke
+npm run smoke:http
 ```
 
-远端相关测试在进程里起一个 hub，不需要设备和网络。
+远端测试会在进程内起一个 hub。CI 跑 Node 18/20/22。
 
----
-[![M8ven Verified](https://m8ven.ai/badge/mcp/yhuan416-serial-hub-mcp-j8uwb6?variant=verified&v=8e8a2b8dc7fb5663bd949718554bf8a8)](https://m8ven.ai/mcp/yhuan416-serial-hub-mcp-j8uwb6?s=readme)
+版本号、tag、Harbor 镜像和部署步骤见
+[docs/development.md](docs/development.md#发布)。
 
+## 安全
 
+- 远端链路和 HTTP 都是明文，只在可信局域网、VPN 或 SSH 隧道里用。
+- 绑非回环 HTTP 地址但没设 `SERIAL_HUB_MCP_HTTP_TOKEN` 时会拒绝启动；确需匿名访问要显式加
+  `--allow-anonymous` / `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1`。
+- 工具返回和 `open_list` 会打码 token；`remotes.json` 推荐用 `token_env`。
+- 安全问题请私下报告，见 [SECURITY.md](SECURITY.md)。
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。

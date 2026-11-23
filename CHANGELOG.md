@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- 重构 README：中英文保持同一结构，徽章置顶，快速开始前置；安装说明改为源码 + `npm link`
+  （npm 尚未发布），补充 Security 和 Mermaid 架构图。
+- 拆分文档：新增 getting-started、tools、configuration、deployment、storage、troubleshooting、
+  development 和 docs 索引；删除已过期的 hub-architecture；新增 SECURITY 与 GitHub issue/PR 模板。
+
 ## 0.3.2 — 2026-11-23
 
 - HTTP 模式绑定非回环地址且未设置 `SERIAL_HUB_MCP_HTTP_TOKEN` 时改为拒绝启动；确需匿名访问要显式

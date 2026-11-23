@@ -1,74 +1,96 @@
 # serial-hub-mcp
 
-中文说明：[README.zh.md](README.zh.md)。
+> One MCP server for local and remote serial ports — byte-transparent I/O, durable logs, and a
+> browser terminal.
 
-A serial-port MCP server that is also a **hub**: one process can hold multiple local
-UARTs plus remote serial endpoints — either an ESP32-S3 wireless dongle or an
-**x86/Linux `serial-hub-server`** that exposes all of its local serial ports.
+[![CI](https://github.com/yhuan416/serial-hub-mcp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/yhuan416/serial-hub-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/tag/yhuan416/serial-hub-mcp?label=release&style=flat-square)](https://github.com/yhuan416/serial-hub-mcp/tags)
+[![License](https://img.shields.io/github/license/yhuan416/serial-hub-mcp?style=flat-square)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white&style=flat-square)](https://nodejs.org/)
+[![M8ven Verified](https://m8ven.ai/badge/mcp/yhuan416-serial-hub-mcp-j8uwb6?variant=verified)](https://m8ven.ai/mcp/yhuan416-serial-hub-mcp-j8uwb6?s=readme)
 
-The byte plane is intentionally boring and transparent: bytes in, bytes out, no framing,
-no prompt/regex interpretation. Content judgement is left to the agent. Logs are split by
-line for retrieval, but the raw hex is always the source of truth.
+中文说明：[README.zh.md](README.zh.md)
+
+**Contents:** [Quick start](#quick-start) · [Tools](#tools) · [Configuration](#configuration)
+· [Deployment](#deployment) · [Documentation](#documentation) · [Security](#security)
+
+`serial-hub-mcp` is an MCP server that is also a serial hub. One process can hold multiple
+local UARTs plus remote serial endpoints — an ESP32-S3 wireless bridge or an x86/Linux
+`serial-hub-server` that exposes all of its local ports.
+
+The byte plane is intentionally boring: bytes in, bytes out, no framing, no prompt/regex
+interpretation. Content judgement is left to the agent. The host splits lines for retrieval,
+assigns log sequence numbers, and keeps the raw hex as the source of truth.
+
+## Why
+
+- **One interface for local and remote**: the same `read` / `write` / `transact` / `receive`
+  tools work whether the port is on the host, an ESP32, or another Linux box.
+- **Byte-transparent**: no hidden framing or prompt parsing; agents see what the device sent.
+- **Durable host-side logs**: query by sequence, time, direction, or content; the device only
+  keeps bytes that have not been ACKed.
+- **Operable**: profiles, open history, DTR/RTS/BREAK, dump/download, and a Web terminal.
 
 ## Features
 
-- **Two transports**: `stdio` (default) and stateless **MCP Streamable HTTP** (`--http`), with
-  optional Bearer auth plus unauthenticated `/health` and `/info` endpoints.
-- **Local serial** via [`serialport`](https://serialport.io/): `list_ports`, open by path,
-  profile, `sn`/`vid`/`pid`, configurable baud/parity/flow control.
+- **stdio + Streamable HTTP** transports; optional Bearer auth and unauthenticated
+  `/health` / `/info`.
+- **Local serial** via `serialport`: path, profile, `sn` / `vid` / `pid`, baud, parity, flow control.
 - **Byte-accurate I/O**: `read` (cat), `transact` (write + wait, ignores pre-write noise),
   `receive` (windowed capture), `dump_to_file` (export a cached slice).
-- **Control lines**: DTR/RTS (with pulse for reset sequences) and BREAK.
-- **Durable logs**: per-connection in-memory ring + JSONL partitions on disk, queryable by
-  seq/time/direction/content, with retention and eviction reporting.
-- **Profiles**: save connection parameters and reuse them with `open({profile})`.
-- **Configured remotes**: register remotes once in `~/.config/serial-hub-mcp/remotes.json`
-  (or `SERIAL_HUB_MCP_REMOTES`); `list_ports` aggregates local + all remote port lists in
-  parallel, and `open({remote:"name"})` resolves endpoint/token for you.
-- **Hub-ready concurrency**: calls are serialized per `connection_id` and run concurrently
-  across different connections.
-- **Remote link (TCP)**: `open({transport:"remote", endpoint:"tcp://host:port"})` speaks the
-  binary push protocol. The device only keeps unacked bytes; the host splits lines and
-  owns `log_query`. Firmware lives in `serial-hub-bridge`.
-- **x86 remote hub-server** (`serial-hub-server`): deploy on a Linux box to expose
-  `ttyUSB*/ttyACM*`. Node.js (`src/hub-server`) plus a Docker image
-  (`docker/serial-hub-server.Dockerfile`). See [x86 hub-server](docs/x86-hub-server.md).
-- **Remote auth**: the bridge requires a HELLO token once configured (NVS-generated per
-  device or `CONFIG_BRIDGE_AUTH_TOKEN`); pass it as `open({token})`. Plaintext, so use a
-  trusted LAN or a VPN/SSH tunnel.
+- **Control lines**: DTR/RTS with pulse for reset sequences, plus BREAK.
+- **Durable logs**: v2 binary segments + SQLite(WAL) block indexes by default; JSONL legacy mode
+  is still available.
+- **Profiles and remotes**: save connection parameters, register remotes once, and let
+  `list_ports` aggregate local and remote ports in parallel.
+- **Remote link v1**: binary BATCH frames, ACK flow control, capture resume, single writer.
+- **Web UI**: xterm terminal, live RX/TX log, history and download in `--http` mode.
 
-> Status: `0.3.x` — local serial, the binary TCP remote link, and the x86
-> `serial-hub-server` are implemented. The ESP32-S3 firmware lives in `serial-hub-bridge`.
+## Quick start
 
-## Install
+### Requirements
+
+- Node.js >= 18 (CI covers 18/20/22; the Docker image uses Node 22).
+- Linux: add your user to `dialout` for `/dev/ttyUSB*` / `/dev/ttyACM*`.
+- Optional: Docker for the x86 `serial-hub-server`.
+
+### Install from source
+
+The package is not published on npm yet.
 
 ```bash
-npm install -g serial-hub-mcp
-# or run without installing
-npx serial-hub-mcp
+git clone https://github.com/yhuan416/serial-hub-mcp.git
+cd serial-hub-mcp
+npm ci
+
+node src/server.js          # stdio
+node src/server.js --http   # HTTP + Web UI on 127.0.0.1:8787
 ```
 
-Requirements: Node.js >= 18. On Linux, add your user to the `dialout` group (or otherwise
-grant read access to `/dev/ttyUSB*`, `/dev/ttyACM*`).
+Optional: `npm link` puts `serial-hub-mcp` and `serial-hub-server` on your PATH.
 
-## MCP client configuration
+### MCP client configuration
 
-### stdio (default)
+stdio:
 
 ```json
 {
   "mcpServers": {
     "serial": {
-      "command": "serial-hub-mcp"
+      "command": "node",
+      "args": ["/absolute/path/to/serial-hub-mcp/src/server.js"]
     }
   }
 }
 ```
 
-### Streamable HTTP
+After `npm link`, `"command": "serial-hub-mcp"` is enough.
 
-Start the server with `--http`, then point clients at the MCP endpoint. The exact client
-config shape varies; for clients that accept a URL and headers:
+Streamable HTTP:
+
+```bash
+SERIAL_HUB_MCP_HTTP_TOKEN=change-me node src/server.js --http --host 0.0.0.0 --port 8787
+```
 
 ```json
 {
@@ -76,209 +98,134 @@ config shape varies; for clients that accept a URL and headers:
     "serial-hub": {
       "type": "http",
       "url": "http://127.0.0.1:8787/mcp",
-      "headers": { "Authorization": "Bearer <token>" }
+      "headers": { "Authorization": "Bearer change-me" }
     }
   }
 }
 ```
 
-## HTTP mode
+Non-loopback HTTP binds require a token; see [Security](#security).
 
-```bash
-serial-hub-mcp --http                      # 127.0.0.1:8787/mcp
-serial-hub-mcp --http --host 0.0.0.0 --port 8787
-SERIAL_HUB_MCP_HTTP_TOKEN=secret serial-hub-mcp --http
-```
-
-- Stateless Streamable HTTP: every request gets its own MCP server instance while sharing the
-  same connection manager / log router / queue, so connections persist across requests.
-- `GET /health` and `GET /info` are unauthenticated and contain no secrets.
-- The server listens on loopback by default. Binding a non-loopback address **without**
-  `SERIAL_HUB_MCP_HTTP_TOKEN` is refused at startup; pass `--allow-anonymous` or set
-  `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1` only when you really want an unauthenticated port
-  (anyone who can reach it can operate the serial ports).
-- The token is compared with a constant-time check and sent as `Authorization: Bearer <token>`.
-
-## Debug UI
-
-`--http` also serves a minimal serial monitor at `http://127.0.0.1:8787/`:
-
-- one tab per connection opened in this process (by MCP tools or by the page itself);
-- `终端 | 日志` views: a tty-like terminal (vendored xterm.js) sends keystrokes as typed, with ANSI/cursor/clear/scrollback, plus configurable Enter (CR/CRLF/LF) and Backspace (DEL/BS);
-- keyboard input bypasses the MCP per-connection queue, so typing is not blocked by an agent `receive`;
-- live RX/TX with millisecond timestamps, auto-scroll, pause and clear in the log view;
-- server-side data is coalesced over ~80ms so high-rate ports do not flood the page;
-- `更早` loads scrollback from the server cache, `下载` exports it to a file;
-- a send box per tab (text, with CR/LF/CRLF) using the same `write` semantics.
-
-The page itself is static and unauthenticated; `/api/*` requires the same Bearer token
-(the page prompts for it). Disable the UI with `SERIAL_HUB_MCP_HTTP_UI=0`.
-
-The page only sees connections in the same `--http` process; stdio servers have no page.
-
-## Tools
-
-| Tool | Purpose |
-|---|---|
-| `list_ports` | Enumerate local ports and probe each configured remote |
-| `open` | Open a connection (`transport` / `port` / `profile` / `sn|vid|pid` / `endpoint`) |
-| `close` | Close a connection |
-| `get_status` | Connection state, counters, control-line levels |
-| `write` | Send bytes (utf8 / hex / base64, optional newline) |
-| `read` | Read bytes since the cursor (optional wait / match / min bytes) |
-| `transact` | Write then wait for a response in one step (AT/Modbus friendly) |
-| `receive` | Capture a window until match / max bytes / idle / budget |
-| `dump_to_file` | Export a slice of the host cache by seq, time, or offset |
-| `set_dtr_rts` | Set DTR/RTS, optionally pulse (reset/bootloader) |
-| `send_break` | Send a BREAK for a given duration |
-| `profile_list/save/delete` | Reusable named connection profiles |
-| `open_list` | Ports opened before, with baud and optional name |
-| `log_query/stats/clear` | Search, inspect and clear logs (no `connection_id` = local + remote) |
-| `service_info` | Service name, version, changelog |
-
-## Quick start
+### First calls
 
 ```text
-list_ports()                     // 本机 + 所有已配置 remote 的端口
-open({ remote: "lab-x86", port_id: "ttyACM0", baud_rate: 921600 })
-open({ port: "/dev/ttyUSB0", baud_rate: 115200, newline: "crlf" })
-transact({ connection_id: "...", data: "AT", match: "OK" })
-receive({ connection_id: "...", start: "flush", reset: "dtr", budget_ms: 15000 })
-dump_to_file({ connection_id: "...", time_from: 1760000000000 })
+list_ports()
+open({ port: "/dev/ttyUSB0", baud_rate: 115200 })
+receive({ connection_id: "...", start: "flush", budget_ms: 5000 })
+transact({ connection_id: "...", data: "AT", newline: "crlf", match: "OK" })
 close({ connection_id: "..." })
 ```
 
-For remote hubs:
+Remote:
 
 ```text
-// ESP32-S3 bridge
-open({ transport: "remote", endpoint: "tcp://esp32s3-01:7000", token: "<token>", port_id: "uart1" })
-// x86 hub-server（port_id 为串口 basename，也接受 /dev/ttyACM0）
-open({ transport: "remote", endpoint: "tcp://192.168.1.50:7000", token: "<token>", port_id: "ttyACM0", baud_rate: 921600 })
-transact({ connection_id: "...", data: "AT", match: "OK" })
-receive({ connection_id: "...", budget_ms: 5000, idle_timeout_ms: 300 })
+open({ remote: "lab-x86", port_id: "ttyACM0", baud_rate: 921600 })
+open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", port_id: "uart1" })
 ```
 
-`endpoint` is `tcp://host:port`. `port_id` selects a device port when the bridge exposes
-more than one; `token` is sent in the `HELLO` frame. The bridge
-prints its NVS-generated token once at boot (`bridge_auth: auth token from NVS: ...`) and
-includes it in the provisioning QR when provisioning is active.
+## Tools
 
-### Remote log semantics
+| Tool                                               | What it does                                             |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| `list_ports`                                       | Local ports plus every configured remote                 |
+| `open` / `close`                                   | Open or close a connection                               |
+| `open_list`                                        | Ports opened before, deduped by endpoint/port/baud       |
+| `get_status`                                       | State, counters, control-line levels                     |
+| `read`                                             | Read bytes since the cursor                              |
+| `write`                                            | Send bytes                                               |
+| `transact`                                         | Write then wait for a response                           |
+| `receive`                                          | Capture a window until match / idle / budget / max bytes |
+| `dump_to_file`                                     | Export a cached slice by seq, time, or offset            |
+| `set_dtr_rts` / `send_break`                       | Control lines and BREAK                                  |
+| `profile_list` / `profile_save` / `profile_delete` | Reusable connection profiles                             |
+| `log_query` / `log_stats` / `log_clear`            | Query, inspect, clear host logs                          |
+| `service_info`                                     | Service name, version, changelog                         |
 
-The host splits BATCH payloads on `\n` and assigns `seq`. `log_query` reads that cache.
-The device does not keep a line index for the TCP session. `gap=true` means bytes were
-lost before they reached the host. `log_clear` with no `connection_id` requires
-`confirm:true`.
+Full parameters, examples, and read-only/destructive hints: [docs/tools.md](docs/tools.md).
 
 ## Configuration
 
-Paths use `XDG_CACHE_HOME` (default `~/.cache`) and `XDG_CONFIG_HOME` (default `~/.config`) and
-can be overridden:
+Common variables; the full table is in [docs/configuration.md](docs/configuration.md).
 
-| Env var | Default | Purpose |
-|---|---|---|
-| `SERIAL_HUB_MCP_LOGS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/logs` | Legacy JSONL log partitions (`STORE=legacy`) |
-| `SERIAL_HUB_MCP_LOG_MEM` | `1000` | In-memory log entries per process |
-| `SERIAL_HUB_MCP_LOG_RETAIN_BYTES` | `67108864` (64 MiB/conn) | Disk retention; `<=0` disables eviction |
-| `SERIAL_HUB_MCP_LOG_PART_BYTES` | `8388608` (8 MiB) | Legacy partition roll size |
-| `SERIAL_HUB_MCP_OPENS_FILE` | `$XDG_CACHE_HOME/serial-hub-mcp/opens.json` | `open_list` index |
-| `SERIAL_HUB_MCP_PROFILES_DIR` | `$XDG_CONFIG_HOME/serial-hub-mcp` | Directory containing `profiles.json` |
-| `SERIAL_HUB_MCP_REMOTES` | unset | Inline remotes JSON (highest priority) |
-| `SERIAL_HUB_MCP_REMOTES_FILE` | `$XDG_CONFIG_HOME/serial-hub-mcp/remotes.json` | Remotes registry file |
-| `SERIAL_HUB_MCP_DUMPS_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/dumps` | `dump_to_file` output |
-| `SERIAL_HUB_MCP_SYNC_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/remote-sync` | Legacy remote-sync cache |
-| `SERIAL_HUB_MCP_V1_CACHE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cache` | v1 host cache when the v2 store is off |
-| `SERIAL_HUB_MCP_V1_STATE_FILE` | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cursors.json` | v1 resume cursors |
-| `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7` | Delete logs, dumps, and capture cache older than this. `0` disables |
-| `SERIAL_HUB_MCP_HTTP` | unset | `1` enables HTTP mode (same as `--http`) |
-| `SERIAL_HUB_MCP_HTTP_HOST` | `127.0.0.1` | HTTP bind host |
-| `SERIAL_HUB_MCP_HTTP_PORT` | `8787` | HTTP bind port |
-| `SERIAL_HUB_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path |
-| `SERIAL_HUB_MCP_HTTP_HEALTH_PATH` | `/health` | Health endpoint (unauthenticated) |
-| `SERIAL_HUB_MCP_HTTP_INFO_PATH` | `/info` | Service info endpoint (unauthenticated) |
-| `SERIAL_HUB_MCP_HTTP_TOKEN` | unset | **Secret.** Bearer token for `/mcp`, `/api/*`, and `/dumps/*`. Required for non-loopback binds unless anonymous access is explicitly allowed |
-| `SERIAL_HUB_MCP_HTTP_UI` | `1` | `0` disables the debug web UI |
-| `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS` | unset | `1` allows a non-loopback bind without a token (**dangerous**) |
+| Variable                        | Default                                        | Purpose                                                   |
+| ------------------------------- | ---------------------------------------------- | --------------------------------------------------------- |
+| `SERIAL_HUB_MCP_HTTP`           | unset                                          | `1` enables HTTP mode                                     |
+| `SERIAL_HUB_MCP_HTTP_HOST`      | `127.0.0.1`                                    | HTTP bind host                                            |
+| `SERIAL_HUB_MCP_HTTP_PORT`      | `8787`                                         | HTTP bind port                                            |
+| `SERIAL_HUB_MCP_HTTP_TOKEN`     | unset                                          | **Secret.** Bearer token; required for non-loopback binds |
+| `SERIAL_HUB_MCP_HTTP_UI`        | `1`                                            | `0` disables the Web UI                                   |
+| `SERIAL_HUB_MCP_STORE`          | `v2`                                           | `v2` (segments + SQLite) or `legacy` (JSONL)              |
+| `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7`                                            | Delete logs/dumps/captures older than this; `0` disables  |
+| `SERIAL_HUB_MCP_REMOTES_FILE`   | `$XDG_CONFIG_HOME/serial-hub-mcp/remotes.json` | Remote registry                                           |
+| `SERIAL_HUB_MCP_PROFILES_DIR`   | `$XDG_CONFIG_HOME/serial-hub-mcp`              | Directory containing `profiles.json`                      |
 
-## Data and log model
+Paths use `$XDG_CACHE_HOME` (default `~/.cache`) and `$XDG_CONFIG_HOME` (default `~/.config`).
 
-- RX is accumulated in a chunked buffer with an absolute consume cursor. The buffer is
-  bounded (`rx_buffer_size`, 4 MiB default); the oldest bytes are dropped and counted in
-  `rx_dropped`.
-- Logs are line-oriented for retrieval (`\n`, trailing `\r` stripped); TX is recorded once
-  per write. Non-UTF-8 content is still available as raw hex.
-- Each log entry is `{ seq, ts, conn, dir, offset, line, hex, bytes }`. Remote `seq` is
-  assigned by the host, not by the device.
+## Deployment
 
-### Host log store
+- **stdio**: run `node src/server.js` from your MCP client.
+- **Streamable HTTP**: `--http` exposes `/mcp`, `/health`, `/info`, `/dumps/<file_id>`, and the
+  Web UI at `/`.
+- **Docker MCP**: [docker/serial-hub-mcp.Dockerfile](docker/serial-hub-mcp.Dockerfile) and the
+  compose files in [docker/](docker/).
+- **x86 serial hub**: [docs/x86-hub-server.md](docs/x86-hub-server.md).
+- **Remote registry**: [docs/remotes.md](docs/remotes.md).
 
-The MCP host keeps durable local logs in `SERIAL_HUB_MCP_STORE=v2` by default: line records go to
-binary segments, SQLite(WAL) stores only segment/block indexes, and `log_query`/history/`dump_to_file`
-read only the blocks they need. Set `SERIAL_HUB_MCP_STORE=legacy` to use the old JSONL partitions.
+Operational details (reverse proxy, Docker mounts, systemd, Harbor, rollback):
+[docs/deployment.md](docs/deployment.md).
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `SERIAL_HUB_MCP_STORE` | `v2` | `v2` or `legacy` |
-| `SERIAL_HUB_MCP_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/local` | local v2 dir |
-| `SERIAL_HUB_MCP_REMOTE_STORE_DIR` | `$XDG_CACHE_HOME/serial-hub-mcp/store/remote` | remote v1 host cache dir |
-| `SERIAL_HUB_MCP_STORE_RETAIN_BYTES` | 512 MiB/connection | per-connection disk cap; `<=0` disables byte eviction |
-| `SERIAL_HUB_MCP_STORE_SEGMENT_BYTES` | 16 MiB | segment size |
-| `SERIAL_HUB_MCP_STORE_BLOCK_BYTES` | 1 MiB | block index granularity |
-| `SERIAL_HUB_MCP_STORE_FLUSH_MS` | 500 | batching interval |
+## Architecture
 
-v2 covers both local ports and the hub-mcp-side log cache for remote v1 sessions. The remote
-hub-server's own ring/capture is unchanged. Old JSONL is not imported automatically; use
-`legacy` to query it.
+```mermaid
+flowchart LR
+  A[MCP client] -->|stdio / HTTP| B[serial-hub-mcp]
+  B --> C[local UARTs]
+  B -->|TCP v1 SH frames| D[ESP32-S3 bridge]
+  B -->|TCP v1 SH frames| E[x86 serial-hub-server]
+  E --> F["/dev/ttyUSB*, ttyACM*"]
+```
 
-### x86 hub-server environment
+The host owns line splitting, `seq`, logs, and read cursors. The remote only keeps bytes that
+have not been ACKed. Wire format: [docs/remote-link-protocol-v1.md](docs/remote-link-protocol-v1.md).
 
-`serial-hub-server` reads these variables; command-line flags win over env. Deployment details
-and the full flag list are in [x86 hub-server](docs/x86-hub-server.md).
+## Documentation
 
-| Env var | Default | Meaning |
-|---|---|---|
-| `SERIAL_HUB_SERVER_TOKEN` | generated `<data-dir>/token` (0600) | **Secret.** HELLO auth token |
-| `SERIAL_HUB_SERVER_LISTEN` | `0.0.0.0:7000` | Listen address |
-| `SERIAL_HUB_SERVER_DATA_DIR` | `~/.local/share/serial-hub-server` | Data and token directory |
-| `SERIAL_HUB_SERVER_PORTS` | `/dev/ttyUSB,/dev/ttyACM,/dev/serial/,COM` | Port path substrings or `/regex/`; empty exposes all |
-| `SERIAL_HUB_SERVER_RING_BYTES` | `64MiB` | Per-port ring buffer |
-| `SERIAL_HUB_SERVER_RETENTION_BYTES` | `4GiB` | Per-port disk retention |
-| `SERIAL_HUB_SERVER_CAPTURE_LINGER_MS` | `60000` | Capture linger after the last session leaves |
-| `SERIAL_HUB_SERVER_CAPTURE_MAX_BYTES` | `128MiB` | Per-capture send-cache cap |
-| `SERIAL_HUB_SERVER_WINDOW_BYTES` | `256KiB` | Default per-session window |
-| `SERIAL_HUB_SERVER_MAX_WINDOW_BYTES` | `1MiB` | Maximum per-session window |
-| `SERIAL_HUB_SERVER_LEASE_MS` | `120000` | Session lease timeout |
-
-## Design
-
-- [Hub architecture](docs/hub-architecture.md) — early layering notes. The protocol doc wins
-  where they disagree.
-- [x86 hub-server](docs/x86-hub-server.md) — deploy a multi-port remote serial service on
-  Linux (systemd unit included).
-- [Configured remotes](docs/remotes.md) — remotes.json / env, aggregated `list_ports`,
-  `open({remote})`.
-- [Remote link protocol](docs/remote-link-protocol-v1.md) — binary push, BATCH, ACK,
-  host-side cache. Server in `src/hub-server/v1.js`; host client in
-  `src/remote/v1_connection.js`.
+| Doc                                            | What                                       |
+| ---------------------------------------------- | ------------------------------------------ |
+| [Getting started](docs/getting-started.md)     | Install, client config, first calls        |
+| [Tools](docs/tools.md)                         | Full tool reference and examples           |
+| [Configuration](docs/configuration.md)         | Every environment variable and path        |
+| [Deployment](docs/deployment.md)               | stdio, HTTP, Docker, systemd, Harbor       |
+| [Remotes](docs/remotes.md)                     | `remotes.json` and aggregated `list_ports` |
+| [x86 hub-server](docs/x86-hub-server.md)       | Multi-port Linux service                   |
+| [Protocol v1](docs/remote-link-protocol-v1.md) | Binary wire contract                       |
+| [Storage](docs/storage.md)                     | Log model, v2 store, retention, dumps      |
+| [Troubleshooting](docs/troubleshooting.md)     | Common errors and diagnostics              |
+| [Development](docs/development.md)             | Tests, lint, CI, release steps             |
 
 ## Development
 
 ```bash
-npm install
-npm test          # unit tests + stdio/HTTP smoke (no hardware required)
-npm run lint      # eslint + prettier check
-npm run smoke     # MCP handshake + tool enumeration only
+npm ci
+npm test          # unit tests + stdio/HTTP smoke; no hardware required
+npm run lint
+npm run smoke
 npm run smoke:http
 ```
 
-Remote-link tests start an in-process hub over TCP. They need neither hardware nor network access.
+Remote tests start an in-process hub. CI runs Node 18, 20, and 22.
+
+Release steps (version bump, tags, Harbor image, deployment) are in
+[docs/development.md](docs/development.md#发布).
+
+## Security
+
+- The remote link and HTTP transport are plaintext. Use a trusted LAN, VPN, or SSH tunnel.
+- Binding a non-loopback HTTP address without `SERIAL_HUB_MCP_HTTP_TOKEN` is refused unless
+  `--allow-anonymous` / `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1` is set explicitly.
+- Tokens are masked in tool output and `open_list`; prefer `token_env` in `remotes.json`.
+- Report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-
----
-[![M8ven Verified](https://m8ven.ai/badge/mcp/yhuan416-serial-hub-mcp-j8uwb6?variant=verified&v=8e8a2b8dc7fb5663bd949718554bf8a8)](https://m8ven.ai/mcp/yhuan416-serial-hub-mcp-j8uwb6?s=readme)
-

@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a new capability or improvement
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that is hard or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Tool, configuration, protocol, or documentation change you have in mind.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other designs you tried.
+    validations:
+      required: false
+
+  - type: input
+    id: deployment
+    attributes:
+      label: Deployment context
+      description: stdio, HTTP, Docker, local serial, or a remote hub.
+      placeholder: "Docker MCP + x86 hub over LAN"
+    validations:
+      required: false
