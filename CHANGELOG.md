@@ -4,12 +4,16 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.3.2 — 2026-11-23
+
 - HTTP 模式绑定非回环地址且未设置 `SERIAL_HUB_MCP_HTTP_TOKEN` 时改为拒绝启动；确需匿名访问要显式
   加 `--allow-anonymous` 或 `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1`。
 - 补齐 README / README.zh 的环境变量表：remotes、v1 缓存/游标、`open_list`、HTTP UI 与匿名开关，
   以及 x86 hub-server 的 `SERIAL_HUB_SERVER_*`；修正 `HTTP_TOKEN` 的说明。
 - 修复 Node 18 CI：`src/sdk/http.js` 在缺少全局 WebCrypto 的上下文补齐 `globalThis.crypto`，
   MCP SDK 的 Streamable HTTP transport 在请求时依赖 `crypto.randomUUID()`。
+- CI 失败时把第一个失败用例输出为 check-run annotation；v1 hub 测试显式连 `127.0.0.1`，
+  避免 `localhost` 在 Node 18 上解析到 `::1`。
 
 ## 0.3.1 — 2026-11-23
 

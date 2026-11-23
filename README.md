@@ -37,7 +37,7 @@ line for retrieval, but the raw hex is always the source of truth.
   device or `CONFIG_BRIDGE_AUTH_TOKEN`); pass it as `open({token})`. Plaintext, so use a
   trusted LAN or a VPN/SSH tunnel.
 
-> Status: `0.1.x` — local serial, the binary TCP remote link, and the x86
+> Status: `0.3.x` — local serial, the binary TCP remote link, and the x86
 > `serial-hub-server` are implemented. The ESP32-S3 firmware lives in `serial-hub-bridge`.
 
 ## Install
