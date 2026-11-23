@@ -197,3 +197,8 @@ npm run lint
 ```
 
 远端相关测试在进程里起一个 hub，不需要设备和网络。
+
+---
+[![M8ven Verified](https://m8ven.ai/badge/mcp/yhuan416-serial-hub-mcp-j8uwb6?variant=verified&v=8e8a2b8dc7fb5663bd949718554bf8a8)](https://m8ven.ai/mcp/yhuan416-serial-hub-mcp-j8uwb6?s=readme)
+
+
