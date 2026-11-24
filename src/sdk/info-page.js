@@ -21,7 +21,7 @@ const DEFAULT_LABELS = {
   publicUrl: "访问地址",
   listen: "监听",
   startedAt: "启动时间",
-  uptimeSeconds: "已运行（秒）",
+  uptimeSeconds: "已运行",
   image: "镜像",
   nodeEnv: "NODE_ENV",
   ui: "Web UI",
@@ -44,7 +44,7 @@ const DEFAULT_LABELS = {
   retentionBytes: "磁盘保留上限",
   retentionDays: "保留天数",
   segmentBytes: "单段大小",
-  blockBytes: "block 索引粒度",
+  blockBytes: "块索引粒度（block）",
   flushMs: "落盘间隔",
   cacheTtlDays: "缓存保留天数",
   bodyBytes: "单次请求体",
@@ -155,6 +155,25 @@ function cellText(value) {
   return String(value);
 }
 
+function formatStartedAt(value) {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(String(value));
+  return m ? `${m[1]} ${m[2]} UTC` : String(value);
+}
+
+/** 已知字段的人性化显示（只影响页面，JSON 不动）。 */
+function formatValue(key, value) {
+  // 约定：*Bytes 用字节数、*Ms 用毫秒、*Days 用天数，渲染层补单位；服务给字符串时原样展示。
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (key === "uptimeSeconds") return `${formatUptime(value)}（${value} 秒）`;
+    if (/Bytes$/.test(key)) return formatBytes(value);
+    if (/Ms$/.test(key)) return `${value} ms`;
+    if (/Days$/.test(key)) return `${value} 天`;
+    if (key === "baudMax") return `${value.toLocaleString("en-US")} baud`;
+  }
+  if (key === "startedAt") return formatStartedAt(value);
+  return cellText(value);
+}
+
 function labelOf(labels, key, sub) {
   const map = { ...DEFAULT_LABELS, ...(labels || {}) };
   if (sub !== undefined) return map[`${key}.${sub}`] || `${map[key] || key}.${sub}`;
@@ -170,36 +189,51 @@ function renderRows(rows, labels) {
       for (const [sub, subValue] of Object.entries(value)) {
         if (subValue === null || subValue === undefined) continue;
         out.push(
-          `<tr><th>${escapeHtml(labelOf(labels, key, sub))}</th><td>${escapeHtml(cellText(subValue))}</td></tr>`,
+          `<tr><th scope="row">${escapeHtml(labelOf(labels, key, sub))}</th><td>${escapeHtml(formatValue(sub, subValue))}</td></tr>`,
         );
       }
       continue;
     }
     out.push(
-      `<tr><th>${escapeHtml(labelOf(labels, key))}</th><td>${escapeHtml(cellText(value))}</td></tr>`,
+      `<tr><th scope="row">${escapeHtml(labelOf(labels, key))}</th><td>${escapeHtml(formatValue(key, value))}</td></tr>`,
     );
   }
   return out.join("");
 }
 
-function renderSection(title, rows, labels) {
+function renderSection(id, title, rows, labels) {
   const body = renderRows(rows, labels);
   if (!body) return "";
-  return `<section><h2>${escapeHtml(title)}</h2><table>${body}</table></section>`;
+  return `<section id="${id}"><h2>${escapeHtml(title)}</h2><table>${body}</table></section>`;
 }
 
-function renderEndpoints(endpoints) {
+function copyButton(text, label = "复制") {
+  if (!text) return "";
+  return ` <button class="copy" type="button" data-copy="${escapeHtml(text)}">${escapeHtml(label)}</button>`;
+}
+
+function renderEndpoints(endpoints, baseUrl) {
   if (!endpoints || !Object.keys(endpoints).length) return "";
   const rows = Object.entries(endpoints).map(([name, spec]) => {
     if (typeof spec === "string") {
-      return `<tr><th>${escapeHtml(name)}</th><td><code>${escapeHtml(spec)}</code></td></tr>`;
+      return `<tr><th scope="row">${escapeHtml(name)}</th><td><code>${escapeHtml(spec)}</code></td></tr>`;
     }
     const path = spec?.path ?? spec?.url ?? "";
-    const auth = spec?.auth ? ` <span class="tag">${escapeHtml(spec.auth)}</span>` : "";
+    const authText = spec?.auth || "";
+    const free = authText.includes("免鉴权") && !authText.includes("需");
+    const tagCls = free ? "tag ok" : authText.includes("Bearer") ? "tag warn" : "tag";
+    const auth = authText ? ` <span class="${tagCls}">${escapeHtml(authText)}</span>` : "";
     const desc = spec?.desc ? ` — ${escapeHtml(spec.desc)}` : "";
-    return `<tr><th>${escapeHtml(name)}</th><td><code>${escapeHtml(path)}</code>${auth}${desc}</td></tr>`;
+    const code = escapeHtml(path);
+    // 免鉴权的 GET 端点可以直接点开；POST 端点（/mcp）点了只会 405，不做链接。
+    const linked =
+      free && path.startsWith("/")
+        ? `<a href="${escapeHtml(path)}"><code>${code}</code></a>`
+        : `<code>${code}</code>`;
+    const copy = path.startsWith("/") ? copyButton(`${baseUrl || ""}${path}`, "复制 URL") : "";
+    return `<tr><th scope="row">${escapeHtml(name)}</th><td>${linked}${copy}${auth}${desc}</td></tr>`;
   });
-  return `<section><h2>端点</h2><table>${rows.join("")}</table></section>`;
+  return `<section id="endpoints"><h2>端点</h2><table>${rows.join("")}</table></section>`;
 }
 
 function renderIntegration(integration) {
@@ -213,70 +247,27 @@ function renderIntegration(integration) {
       : [];
   for (const s of snippets) {
     if (!s || (!s.code && !s.text)) continue;
-    if (s.title) parts.push(`<p class="sub">${escapeHtml(s.title)}</p>`);
-    parts.push(`<pre>${escapeHtml(s.code ?? s.text)}</pre>`);
+    const code = s.code ?? s.text;
+    parts.push(
+      `<div class="snippet"><div class="snip-head"><span>${escapeHtml(s.title || "配置")}</span>${copyButton(code)}</div>` +
+        `<pre>${escapeHtml(code)}</pre></div>`,
+    );
   }
   if (!parts.length) return "";
-  return `<section><h2>接入步骤</h2>${parts.join("")}</section>`;
+  return `<section id="integration"><h2>接入步骤</h2>${parts.join("")}</section>`;
 }
 
 function renderChangelog(info) {
   const text = typeof info.changelog === "string" ? info.changelog.trim() : "";
   if (!text) return "";
   return (
-    `<section><h2>变更摘要</h2><details><summary>CHANGELOG（最近若干行）</summary>` +
+    `<section id="changelog"><h2>变更摘要</h2><details><summary>CHANGELOG（最近若干行）</summary>` +
     `<pre>${escapeHtml(text)}</pre></details></section>`
   );
 }
 
-/**
- * 渲染自描述页面。字段全部来自 info，缺哪段就不渲染哪段。
- * @param {object} info 与 /info JSON 相同的数据
- * @returns {string} 完整 HTML（自包含，无外部资源）
- */
-export function renderInfoHtml(info = {}) {
-  const service = info.service || "service";
-  const version = info.version || "unknown";
-  const summary = info.summary ? escapeHtml(info.summary) : "";
-  const uptimeSeconds = Number(info.deployment?.uptimeSeconds);
-  const uptime =
-    Number.isFinite(uptimeSeconds) && uptimeSeconds >= 0
-      ? `运行 ${formatUptime(uptimeSeconds)}`
-      : "";
-  const subtitle = [summary, uptime].filter(Boolean).join(" · ");
-  const publicUrl = info.deployment?.publicUrl
-    ? `<a href="${escapeHtml(info.deployment.publicUrl)}">${escapeHtml(info.deployment.publicUrl)}</a>`
-    : "";
-
-  return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHtml(service)} ${escapeHtml(version)} · 部署信息</title>
-<link rel="alternate" type="application/json" href="?format=json">
-<style>
-:root{color-scheme:light dark}
-body{font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:32px;background:#fafafa;color:#18181b}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#71717a;margin:24px 0 8px}
-.sub{color:#71717a;margin:0 0 8px}
-table{border-collapse:collapse;width:100%;max-width:760px;background:#fff;border:1px solid #e4e4e7;border-radius:8px;overflow:hidden}
-th,td{text-align:left;padding:7px 12px;border-top:1px solid #f4f4f5;vertical-align:top}
-th{width:190px;color:#52525b;font-weight:500}td{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
-code{background:#f4f4f5;padding:1px 5px;border-radius:4px}
-.tag{background:#eef2ff;color:#3730a3;border-radius:4px;padding:0 5px;font-size:11px}
-pre{background:#18181b;color:#e4e4e7;padding:14px;border-radius:8px;overflow:auto;max-width:760px;font-size:12px}
-footer{margin-top:24px;color:#71717a;font-size:12px}
-@media (prefers-color-scheme:dark){body{background:#09090b;color:#fafafa}table{background:#18181b;border-color:#27272a}th,td{border-color:#27272a}th{color:#a1a1aa}code{background:#27272a}.tag{background:#312e81;color:#c7d2fe}}
-</style></head><body>
-<h1>${escapeHtml(service)} <span style="color:#71717a">${escapeHtml(version)}</span></h1>
-${subtitle ? `<p class="sub">${subtitle}</p>` : ""}
-${renderSection("部署", info.deployment, info.labels)}
-${renderSection("存储", info.storage, info.labels)}
-${renderSection("限制", info.limits, info.labels)}
-${renderEndpoints(info.endpoints)}
-${renderIntegration(info.integration)}
-${renderChangelog(info)}
-<footer>${publicUrl ? `访问地址 ${publicUrl} · ` : ""}<a href="?format=json">JSON</a> · 本页免鉴权，不含密钥</footer>
-</body></html>`;
-}
+// 复制按钮：优先 Clipboard API，失败/不可用时降级到临时 textarea + execCommand。
+const COPY_SCRIPT = `document.addEventListener("click",function(e){var b=e.target&&e.target.closest?e.target.closest("[data-copy]"):null;if(!b)return;e.preventDefault();var t=b.getAttribute("data-copy")||"";var done=function(){var o=b.textContent;b.textContent="已复制";setTimeout(function(){b.textContent=o;},1200);};var fallback=function(){var ta=document.createElement("textarea");ta.value=t;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done();}catch(_){}document.body.removeChild(ta);};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,fallback);}else{fallback();}});`;
 
 /** 未指定 PUBLIC_URL 时用请求的 Host 头拼访问地址（容器 hostname 对人无意义）。 */
 export function resolvePublicUrl({ envUrl, req, fallback } = {}) {
@@ -304,4 +295,114 @@ export function formatUptime(seconds) {
   const h = Math.floor(m / 60);
   if (h < 48) return `${h}h${m % 60 ? ` ${m % 60}m` : ""}`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+/**
+ * 渲染自描述页面。字段全部来自 info，缺哪段就不渲染哪段。
+ * 页面自包含（无外链 CSS/JS/字体），离线可看；复制按钮用内联脚本，拿不到剪贴板时降级。
+ * @param {object} info 与 /info JSON 相同的数据
+ * @returns {string} 完整 HTML
+ */
+export function renderInfoHtml(info = {}) {
+  const service = info.service || "service";
+  const version = info.version || "unknown";
+  const summary = info.summary ? escapeHtml(info.summary) : "";
+  const uptimeSeconds = Number(info.deployment?.uptimeSeconds);
+  const uptime =
+    Number.isFinite(uptimeSeconds) && uptimeSeconds >= 0
+      ? `运行 ${formatUptime(uptimeSeconds)}`
+      : "";
+  const subtitle = [summary, uptime].filter(Boolean).join(" · ");
+  const publicUrlText = info.deployment?.publicUrl || "";
+  const publicUrl = publicUrlText
+    ? `<a href="${escapeHtml(publicUrlText)}">${escapeHtml(publicUrlText)}</a>${copyButton(publicUrlText)}`
+    : "";
+  const generatedAt = formatStartedAt(new Date().toISOString());
+
+  const blocks = [
+    {
+      id: "deploy",
+      title: "部署",
+      html: renderSection("deploy", "部署", info.deployment, info.labels),
+    },
+    {
+      id: "storage",
+      title: "存储",
+      html: renderSection("storage", "存储", info.storage, info.labels),
+    },
+    {
+      id: "limits",
+      title: "限制",
+      html: renderSection("limits", "限制", info.limits, info.labels),
+    },
+    { id: "endpoints", title: "端点", html: renderEndpoints(info.endpoints, publicUrlText) },
+    { id: "integration", title: "接入步骤", html: renderIntegration(info.integration) },
+    { id: "changelog", title: "变更摘要", html: renderChangelog(info) },
+  ].filter((b) => b.html);
+  const toc = blocks.length
+    ? `<nav class="toc">${blocks
+        .map((b) => `<a href="#${b.id}">${escapeHtml(b.title)}</a>`)
+        .join("")}</nav>`
+    : "";
+
+  return `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(service)} ${escapeHtml(version)} · 服务自描述</title>
+<link rel="alternate" type="application/json" href="?format=json">
+<style>
+:root{color-scheme:light dark}
+body{font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:32px;background:#fafafa;color:#18181b}
+h1{font-size:20px;margin:0 0 4px}h1 .ver{color:#71717a;font-weight:400}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#71717a;margin:24px 0 8px}
+h2:target{color:#2563eb}
+.sub{color:#71717a;margin:0 0 8px}
+nav.toc{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}
+nav.toc a{color:#52525b;text-decoration:none;border:1px solid #e4e4e7;border-radius:999px;padding:3px 10px;background:#fff;font-size:12px}
+nav.toc a:hover{border-color:#a1a1aa;color:#18181b}
+table{border-collapse:collapse;width:100%;max-width:760px;background:#fff;border:1px solid #e4e4e7;border-radius:8px;overflow:hidden}
+th,td{text-align:left;padding:7px 12px;border-top:1px solid #f4f4f5;vertical-align:top}
+th{width:190px;color:#52525b;font-weight:500}td{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+code{background:#f4f4f5;padding:1px 5px;border-radius:4px}
+.tag{background:#eef2ff;color:#3730a3;border-radius:4px;padding:0 5px;font-size:11px}
+.tag.ok{background:#dcfce7;color:#166534}
+.tag.warn{background:#fef3c7;color:#92400e}
+.copy{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;background:#fff;border:1px solid #d4d4d8;color:#52525b;border-radius:4px;padding:1px 6px;cursor:pointer;margin-left:6px;vertical-align:middle}
+.copy:hover{background:#f4f4f5;color:#18181b}
+.snippet{max-width:760px;margin:10px 0 0}
+.snip-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#52525b;margin-bottom:4px}
+.snip-head .copy{margin-left:0}
+pre{background:#18181b;color:#e4e4e7;padding:14px;border-radius:8px;overflow:auto;max-width:760px;font-size:12px;margin:0}
+footer{margin-top:28px;color:#71717a;font-size:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+footer a{color:#52525b}
+@media (max-width:640px){
+  body{padding:16px}
+  table,thead,tbody,tr,th,td{display:block;width:auto}
+  tr{border-top:1px solid #f4f4f5;padding:6px 0}
+  tr:first-child{border-top:0}
+  th{width:auto;border-top:0;padding-bottom:0;font-size:12px}
+  td{border-top:0;padding-top:2px}
+}
+@media (prefers-color-scheme:dark){
+  body{background:#09090b;color:#fafafa}
+  table,nav.toc a,.copy{background:#18181b;border-color:#27272a}
+  th,td,tr{border-color:#27272a}
+  th,nav.toc a,footer a{color:#a1a1aa}
+  code{background:#27272a}
+  .tag{background:#312e81;color:#c7d2fe}
+  .tag.ok{background:#14532d;color:#bbf7d0}
+  .tag.warn{background:#78350f;color:#fde68a}
+  .copy{color:#a1a1aa}.copy:hover{background:#27272a;color:#fafafa}
+}
+</style></head><body>
+<h1>${escapeHtml(service)} <span class="ver">${escapeHtml(version)}</span></h1>
+${subtitle ? `<p class="sub">${subtitle}</p>` : ""}
+${toc}
+${blocks.map((b) => b.html).join("\n")}
+<footer>
+${publicUrl ? `<span>访问地址 ${publicUrl}</span>` : ""}
+<span><a href="?format=json">JSON</a> · <a href="?format=html">HTML</a></span>
+<span>免鉴权、不含密钥 · 生成于 ${escapeHtml(generatedAt)}</span>
+</footer>
+<script>${COPY_SCRIPT}</script>
+</body></html>`;
 }

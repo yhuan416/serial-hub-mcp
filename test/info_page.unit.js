@@ -119,3 +119,37 @@ test("formatBytes / dirStats 只统计直接子文件", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("/info 页面：单位在渲染层补全（JSON 保持数值）", () => {
+  const html = renderInfoHtml({
+    service: "s",
+    version: "1",
+    deployment: { startedAt: "2026-11-24T03:38:20.859Z", uptimeSeconds: 2337 },
+    limits: { bodyBytes: 4 * 1024 * 1024, flushMs: 500, cacheTtlDays: 7, baudMax: 5000000 },
+  });
+  assert.ok(html.includes("4.0 MiB"), "字节数应格式化");
+  assert.ok(html.includes("500 ms"), "毫秒应带单位");
+  assert.ok(html.includes("7 天"), "天数应带单位");
+  assert.ok(html.includes("5,000,000 baud"), "波特率应带千分位与单位");
+  assert.ok(html.includes("2026-11-24 03:38:20 UTC"), "启动时间应简洁展示");
+  assert.ok(html.includes("38m（2337 秒）"), "运行时长应人性化");
+});
+
+test("/info 页面：锚点导航、复制按钮、端点分色与可点击规则", () => {
+  const html = renderInfoHtml({
+    service: "s",
+    version: "1",
+    deployment: { publicUrl: "http://h:1" },
+    endpoints: {
+      health: { path: "/health", auth: "免鉴权", desc: "健康检查" },
+      mcp: { path: "/mcp", auth: "Bearer token", desc: "MCP" },
+    },
+    integration: { snippets: [{ title: "配置", code: "echo hi" }] },
+  });
+  assert.ok(html.includes('<nav class="toc">'), "应有段内导航");
+  assert.ok(html.includes("data-copy="), "应有复制按钮");
+  assert.ok(html.includes('<a href="/health">'), "免鉴权 GET 端点应可点击");
+  assert.ok(!html.includes('<a href="/mcp">'), "POST 端点不应做成链接");
+  assert.ok(html.includes("tag ok"), "免鉴权应使用绿色标签");
+  assert.ok(html.includes("tag warn"), "Bearer 应使用警示色标签");
+});

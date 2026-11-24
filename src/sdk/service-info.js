@@ -28,6 +28,7 @@ export function buildServiceInfo(opts = {}) {
     dynamic,
   } = opts;
   const info = {
+    contract: "info/1",
     service: service || "mcp",
     version: version || "unknown",
   };

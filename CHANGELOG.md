@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- `/info` 页面可读性：段内锚点导航；代码块与访问地址一键复制（Clipboard API，失败降级
+  `execCommand`）；单位在渲染层补全（`*Bytes`/`*Ms`/`*Days`/`baudMax`，JSON 保持数值）；
+  端点鉴权分色且免鉴权 GET 端点可点击；窄屏改为上下堆叠布局。
+- `/info` 与 `service_info` 的字段结构对齐 mcp-kit 的 `info/1` 契约（五段骨架 + `contract` 字段）。
+
 ## 0.3.4 — 2026-11-24
 
 - `/info` 升级为**服务自描述页**：同一路径两种表示（默认 JSON；`?format=html` 或浏览器
