@@ -185,10 +185,11 @@ variable wins over the file. See [docs/configuration.md](docs/configuration.md#å
 
 Browsers get a readable page; scripts get JSON from the same URL:
 
-<img src="docs/assets/info-page.png" alt="/info page: deployment, storage, limits, endpoints and copy-paste client setup" width="820">
+<img src="docs/assets/info-page.png" alt="/info page: version, runtime, public URL, uptime and image, then storage/limits/endpoints below" width="820">
 
 It answers the questions that come right after a deploy: which version is running, where the
-data lives, what the limits are, which endpoints need a token, and how to point a client at it.
+data lives, what the limits are, which endpoints need a token, and how to point a client at it
+(the top section is shown here; storage, limits, endpoints and client setup follow).
 The page is unauthenticated, never contains the token, and returns the same data as the
 `service_info` tool (JSON keys stay English; page labels are Chinese today).
 `serial-hub-server` serves the same page on its binary port

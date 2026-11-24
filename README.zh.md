@@ -176,10 +176,11 @@ open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", p
 
 浏览器打开是可读页面，脚本拿同一个 URL 的 JSON：
 
-<img src="docs/assets/info-page.png" alt="/info 页面：部署、存储、限额、端点和可直接粘贴的接入配置" width="820">
+<img src="docs/assets/info-page.png" alt="/info 页面：版本、运行时、访问地址、运行时间和镜像，下面还有存储/限额/端点/接入" width="820">
 
 部署完常问的几件事都在这一页：跑的是哪个版本、数据放在哪、有什么硬上限、哪些端点要 token、
-客户端怎么接。页面免鉴权、不含 token，和 MCP 的 `service_info` 工具同一份数据。
+客户端怎么接（图里是顶部的部署段，后面还有存储、限额、端点和接入配置）。
+页面免鉴权、不含 token，和 MCP 的 `service_info` 工具同一份数据。
 `serial-hub-server` 在二进制端口上提供同样的页面（`http://<hub>:7000/info`）。
 字段约定和复用模板见 [docs/info-page.md](docs/info-page.md)。
 
