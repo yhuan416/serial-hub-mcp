@@ -8,6 +8,8 @@
 
 两个服务都实现了这套约定：
 
+![serial-hub-mcp 的 /info 页面](assets/info-page.png)
+
 | 服务                 | 地址                                   | 实现                                         |
 | -------------------- | -------------------------------------- | -------------------------------------------- |
 | `serial-hub-mcp`     | `http://<host>:8787/info`（HTTP 模式） | `src/info.js` + `src/sdk/info-page.js`       |

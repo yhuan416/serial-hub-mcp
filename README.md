@@ -181,6 +181,19 @@ variable wins over the file. See [docs/configuration.md](docs/configuration.md#å
 - **x86 serial hub**: [docs/x86-hub-server.md](docs/x86-hub-server.md).
 - **Remote registry**: [docs/remotes.md](docs/remotes.md).
 
+### The self-describing `/info` page
+
+Browsers get a readable page; scripts get JSON from the same URL:
+
+<img src="docs/assets/info-page.png" alt="/info page: deployment, storage, limits, endpoints and copy-paste client setup" width="820">
+
+It answers the questions that come right after a deploy: which version is running, where the
+data lives, what the limits are, which endpoints need a token, and how to point a client at it.
+The page is unauthenticated, never contains the token, and returns the same data as the
+`service_info` tool (JSON keys stay English; page labels are Chinese today).
+`serial-hub-server` serves the same page on its binary port
+(`http://<hub>:7000/info`). Contract and template: [docs/info-page.md](docs/info-page.md).
+
 Operational details (reverse proxy, Docker mounts, systemd, Harbor, rollback):
 [docs/deployment.md](docs/deployment.md).
 

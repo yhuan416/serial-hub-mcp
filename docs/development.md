@@ -157,6 +157,8 @@ README / Harbor / git tag 三处的版本号要一致。
 - Social preview 需要在 **Settings → General → Social preview** 手动上传
   [`docs/assets/social-preview.png`](assets/social-preview.png)（1280×640）。
 - README 顶部截图是 [`docs/assets/web-ui.png`](assets/web-ui.png)，来自 `--http` 的网页界面。
+- 自描述页截图是 [`docs/assets/info-page.png`](assets/info-page.png)（900×2472），
+  来自 `GET /info?format=html`；换数据时重截，不要只改说明文字。
 
 ## 文档
 
