@@ -72,11 +72,14 @@ API 里定位，不需要仓库 admin 权限下载日志。
 ### 1. 版本与 changelog
 
 ```bash
+npm run changelog          # 上个 tag 以来的提交草稿（按类型分组，带短 hash）
 npm version 0.3.4 --no-git-tag-version
 ```
 
-把 `CHANGELOG.md` 的 `## Unreleased` 内容移到 `## 0.3.4 — YYYY-MM-DD`，保留新的空
-`## Unreleased`。
+`npm run changelog` 只给草稿（Conventional Commits 的 subject），CHANGELOG 要按用户可见性
+改写：合并同类项、去掉内部重构、补上影响范围。把 `## Unreleased` 内容移到
+`## 0.3.4 — YYYY-MM-DD`，保留新的空 `## Unreleased`。指定起点：
+`npm run changelog -- v0.3.2`。
 
 ### 2. 验证
 
@@ -96,7 +99,8 @@ git tag -a v0.3.4 -m "serial-hub-mcp 0.3.4"
 git push origin master v0.3.4
 ```
 
-如果远端 master 有新提交，先 merge/rebase 再 push；tag 只打在发布提交上。
+如果远端 master 有新提交，先 merge/rebase 再 push；tag 打在准备发布时 master 的 HEAD
+（通常紧随 release 提交；之后的纯文档修正也可以包含进 tag，前提是 CI 已经绿）。
 
 ### 4. 构建并推送镜像
 

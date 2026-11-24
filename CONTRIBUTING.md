@@ -38,6 +38,16 @@ Node.js >= 18 is required. On Linux you do **not** need a serial device to run t
 - Update `docs/tools.md` and `docs/configuration.md` when adding a tool or environment
   variable. Keep `README.md` and `README.zh.md` structurally aligned.
 
+## Commit messages
+
+Use Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`, `ci:`,
+`chore:`, and `release:` for version bumps. Scopes are optional (`feat(info): ...`), and `!`
+marks a breaking change.
+
+`npm run changelog` turns commits since the last tag into a grouped Markdown draft (Chinese
+section titles, short hashes). It only reads git and prints to stdout; edit the result into
+`CHANGELOG.md` instead of pasting it verbatim.
+
 ## Releasing
 
 The release checklist lives in [docs/development.md](docs/development.md#发布): version bump,

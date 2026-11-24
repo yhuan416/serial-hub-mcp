@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 - 新增 `SERIAL_HUB_MCP_PUBLIC_URL` / `SERIAL_HUB_SERVER_PUBLIC_URL`：显式指定 `/info`
   上显示的访问地址；未设置时用请求 `Host` 头，避免容器部署显示容器 ID。
 - 新增 `docs/info-page.md`：五段骨架、内容协商约定、接入自检清单和可复用的构建/渲染骨架。
+- 新增 `npm run changelog`：从上一个 tag 的 Conventional Commits 生成分组草稿（只读 git、
+  输出 Markdown），发布时人工改写成用户可见条目；commit 规范同步写进 CONTRIBUTING。
+- README 中英文新增 `/info` 页面截图（深色，部署段），`docs/info-page.md` 同步引用。
 - 文档同步：deployment、configuration、x86-hub-server、troubleshooting、README 中英文。
 
 ## 0.3.3 — 2026-11-23
