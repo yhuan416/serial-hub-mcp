@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.3.4 — 2026-11-24
+
+- `/info` 升级为**服务自描述页**：同一路径两种表示（默认 JSON；`?format=html` 或浏览器
+  `Accept: text/html` 返回可读页面），固定五段骨架——部署 / 存储 / 限制 / 端点 / 接入步骤，
+  外加变更摘要。页面免鉴权、不含 token，与 MCP 的 `service_info` 工具同源。
+- `serial-hub-server` 在 7000 端口按首字节嗅探 HTTP（`GET` / `HEAD`），同端口提供
+  `/info`、`/health`；其余连接仍走二进制 SH 帧。启动日志增加自描述地址。
+- 新增 `SERIAL_HUB_MCP_PUBLIC_URL` / `SERIAL_HUB_SERVER_PUBLIC_URL`：显式指定 `/info`
+  上显示的访问地址；未设置时用请求 `Host` 头，避免容器部署显示容器 ID。
+- 新增 `docs/info-page.md`：五段骨架、内容协商约定、接入自检清单和可复用的构建/渲染骨架。
+- 文档同步：deployment、configuration、x86-hub-server、troubleshooting、README 中英文。
+
 ## 0.3.3 — 2026-11-23
 
 - 重构 README：中英文保持同一结构，徽章置顶，快速开始前置；安装说明改为源码 + `npm link`
