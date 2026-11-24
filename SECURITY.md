@@ -29,7 +29,8 @@
 - **明文链路**：远端 v1（TCP 7000）和 MCP HTTP 都是明文 + token。只应在可信 LAN、VPN 或
   SSH 隧道里使用；不要把 7000 / 8787 直接暴露到公网。
 - **HTTP 鉴权**：`SERIAL_HUB_MCP_HTTP_TOKEN` 保护 `/mcp`、`/api/*` 和 `/dumps/*`；
-  `/health`、`/info` 是免鉴权的、且不含密钥。
+  `/health`、`/info` 是免鉴权的、且不含密钥。x86 hub 的 `/info`、`/health` 与 7000 二进制端口
+  同端口、同样免鉴权，只暴露部署形态和端口列表（不含 token）。
 - **非回环 fail-closed**：绑定非回环地址且没有 token 时进程拒绝启动。只有显式
   `--allow-anonymous` 或 `SERIAL_HUB_MCP_HTTP_ALLOW_ANONYMOUS=1` 才会放行；此时任何能访问端口
   的人都能操作串口。

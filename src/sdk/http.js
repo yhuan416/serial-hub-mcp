@@ -4,12 +4,14 @@
 // 但它们共享外部的 ConnectionManager / LogRouter / queue —— 连接状态跨请求保留。
 //
 // 鉴权：可选 Bearer token（SERIAL_HUB_MCP_HTTP_TOKEN）。/health 与 /info 免鉴权、不含密钥。
+// /info 同一路径两种表示：默认 JSON，浏览器 / ?format=html / Accept: text/html 时返回可读页。
 
 import http from "node:http";
 import fs from "node:fs";
 import nodePath from "node:path";
 import crypto from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { negotiateInfoFormat, renderInfoHtml } from "./info-page.js";
 
 // Node 18 的 test runner 及部分嵌入上下文不提供全局 WebCrypto；MCP SDK 的
 // Streamable HTTP transport 在请求时依赖 crypto.randomUUID()。
@@ -136,14 +138,30 @@ export function createHttpServer(opts = {}) {
         const val = typeof health === "function" ? await health(req) : (health ?? { ok: true });
         return json(res, 200, val);
       }
-      // 免鉴权自描述（不含密钥）
+      // 免鉴权自描述（不含密钥）。同一路径两种表示：JSON 给脚本，HTML 给人看。
       if (infoPath && info && req.method === "GET" && url.pathname === infoPath) {
         const val = typeof info === "function" ? await info(req) : info;
         if (typeof val === "string") {
           res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
           return res.end(val);
         }
-        return json(res, 200, val);
+        const headers = { vary: "Accept", "cache-control": "no-store" };
+        if (negotiateInfoFormat(req, url) === "html") {
+          const html = renderInfoHtml(val);
+          res.writeHead(200, {
+            ...headers,
+            "content-type": "text/html; charset=utf-8",
+            "content-length": Buffer.byteLength(html),
+          });
+          return res.end(html);
+        }
+        const body = JSON.stringify(val);
+        res.writeHead(200, {
+          ...headers,
+          "content-type": "application/json; charset=utf-8",
+          "content-length": Buffer.byteLength(body),
+        });
+        return res.end(body);
       }
       if (req.method === "GET" && dumpsPath && url.pathname.startsWith(dumpsPath)) {
         if (authorized && !authorized(req)) return rpcError(res, 401, -32001, "Unauthorized");

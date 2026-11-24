@@ -18,6 +18,7 @@
 | [Storage](storage.md)                     | 字节/日志模型、v2 segment + SQLite、保留与 dump     |
 | [Protocol v1](remote-link-protocol-v1.md) | ESP32 / x86 hub 的二进制线格式契约                  |
 | [Remotes](remotes.md)                     | `remotes.json`、`list_ports` 汇总、`open({remote})` |
+| [Info page](info-page.md)                 | `/info` 自描述页：五段骨架、内容协商、复用模板      |
 
 ## 部署
 

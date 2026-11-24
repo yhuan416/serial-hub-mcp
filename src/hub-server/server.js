@@ -6,6 +6,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { PortManager } from "./ports.js";
 import { isV1Magic, V1Connection } from "./v1.js";
+import { buildHubInfo } from "./info.js";
+import { negotiateInfoFormat, renderInfoHtml } from "../sdk/info-page.js";
+
+const HTTP_MAX_HEADER = 16 * 1024;
+const HTTP_REASONS = {
+  200: "OK",
+  400: "Bad Request",
+  404: "Not Found",
+  405: "Method Not Allowed",
+  431: "Request Header Fields Too Large",
+};
 
 function nowMs() {
   return Date.now();
@@ -56,6 +67,7 @@ export class HubServer {
     this.v1LeaseMs = Math.max(1000, opts.v1LeaseMs ?? 30000);
     this.v1MaxLineBytes = Math.max(256, opts.v1MaxLineBytes ?? 4096);
     this.bootId = opts.bootId || crypto.randomBytes(4).toString("hex");
+    this.tokenSource = opts.tokenSource || null;
     this.v1Conns = new Set();
     this.sockets = new Set();
     this.server = net.createServer((socket) => this._accept(socket));
@@ -91,6 +103,8 @@ export class HubServer {
       raw: Buffer.alloc(0),
       mode: null,
       v1: null,
+      httpBuf: Buffer.alloc(0),
+      httpDone: false,
       closed: false,
     };
     this.sockets.add(socket);
@@ -108,13 +122,27 @@ export class HubServer {
     });
   }
 
-  /** 只接受二进制帧（魔数 SH）。其它首字节直接断开。 */
+  /** 只接受二进制帧（魔数 SH）；首字节是 HTTP 方法时当作自描述请求（/info、/health）。 */
   _onRaw(st, chunk) {
     if (st.mode === "v1") {
       st.v1.onData(chunk);
       return;
     }
+    if (st.mode === "http") {
+      this._onHttp(st, chunk);
+      return;
+    }
     st.raw = st.raw.length ? Buffer.concat([st.raw, chunk]) : chunk;
+    if (st.raw.length >= 4) {
+      const head = st.raw.toString("latin1", 0, 4);
+      if (head === "GET " || head === "HEAD" || head === "POST" || head === "OPTI") {
+        st.mode = "http";
+        const pending = st.raw;
+        st.raw = Buffer.alloc(0);
+        this._onHttp(st, pending);
+        return;
+      }
+    }
     if (st.raw.length < 2) return;
     if (!isV1Magic(st.raw)) {
       st.socket.destroy();
@@ -125,6 +153,138 @@ export class HubServer {
     st.v1 = conn;
     this.v1Conns.add(conn);
     st.raw = Buffer.alloc(0);
+  }
+
+  _onHttp(st, chunk) {
+    if (st.httpDone) return;
+    if (chunk.length) {
+      st.httpBuf = st.httpBuf.length ? Buffer.concat([st.httpBuf, chunk]) : chunk;
+    }
+    if (st.httpBuf.length > HTTP_MAX_HEADER) {
+      this._respondHttp(
+        st,
+        431,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify({ ok: false, error: "request header too large" }),
+        false,
+      );
+      return;
+    }
+    const end = st.httpBuf.indexOf("\r\n\r\n");
+    if (end < 0) return;
+    const head = st.httpBuf.subarray(0, end).toString("latin1");
+    st.httpBuf = Buffer.alloc(0);
+    this._handleHttpRequest(st, head);
+  }
+
+  _handleHttpRequest(st, head) {
+    const lines = head.split("\r\n");
+    const m = /^([A-Z]+)\s+(\S+)\s+HTTP\/\d(?:\.\d)?$/.exec(lines[0] || "");
+    if (!m) {
+      return this._respondHttp(
+        st,
+        400,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify({ ok: false, error: "bad request" }),
+        false,
+      );
+    }
+    const method = m[1];
+    let url;
+    try {
+      url = new URL(m[2], "http://localhost");
+    } catch (_) {
+      return this._respondHttp(
+        st,
+        400,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify({ ok: false, error: "bad url" }),
+        false,
+      );
+    }
+    const headOnly = method === "HEAD";
+    if (method !== "GET" && method !== "HEAD") {
+      return this._respondHttp(
+        st,
+        405,
+        { "content-type": "application/json; charset=utf-8", allow: "GET, HEAD" },
+        JSON.stringify({ ok: false, error: "method not allowed" }),
+        false,
+      );
+    }
+    const headers = {};
+    for (const line of lines.slice(1)) {
+      const i = line.indexOf(":");
+      if (i > 0) headers[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+    }
+    const reqLike = { headers };
+    // 免鉴权、不含密钥：只读部署形态与端口列表。
+    if (url.pathname === "/info" || url.pathname === "/" || url.pathname === "/index.html") {
+      const info = buildHubInfo(this, { version: this.fwVersion, req: reqLike });
+      const isRoot = url.pathname === "/" || url.pathname === "/index.html";
+      if (isRoot || negotiateInfoFormat(reqLike, url) === "html") {
+        const html = renderInfoHtml(info);
+        return this._respondHttp(
+          st,
+          200,
+          { "content-type": "text/html; charset=utf-8" },
+          html,
+          headOnly,
+        );
+      }
+      return this._respondHttp(
+        st,
+        200,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify(info),
+        headOnly,
+      );
+    }
+    if (url.pathname === "/health") {
+      const body = JSON.stringify({
+        ok: true,
+        service: "serial-hub-server",
+        version: this.fwVersion,
+        transport: "tcp",
+        ports: this.manager.list().length,
+        uptimeSeconds: Math.max(0, Math.round((nowMs() - this.startedAt) / 1000)),
+      });
+      return this._respondHttp(
+        st,
+        200,
+        { "content-type": "application/json; charset=utf-8" },
+        body,
+        headOnly,
+      );
+    }
+    return this._respondHttp(
+      st,
+      404,
+      { "content-type": "application/json; charset=utf-8" },
+      JSON.stringify({ ok: false, error: `not found: ${url.pathname}` }),
+      headOnly,
+    );
+  }
+
+  _respondHttp(st, status, headers, body, headOnly) {
+    if (st.httpDone) return;
+    st.httpDone = true;
+    const buf = Buffer.from(body ?? "", "utf8");
+    const lines = [
+      `HTTP/1.1 ${status} ${HTTP_REASONS[status] || "OK"}`,
+      `content-length: ${buf.length}`,
+      "connection: close",
+      "cache-control: no-store",
+      "vary: Accept",
+    ];
+    for (const [k, v] of Object.entries(headers || {})) lines.push(`${k}: ${v}`);
+    try {
+      st.socket.write(`${lines.join("\r\n")}\r\n\r\n`);
+      if (!headOnly) st.socket.write(buf);
+      st.socket.end();
+    } catch (_) {
+      st.socket.destroy();
+    }
   }
 
   _captureMaxFile() {

@@ -141,7 +141,7 @@ open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", p
 | `set_dtr_rts` / `send_break`                       | Control lines and BREAK                                  |
 | `profile_list` / `profile_save` / `profile_delete` | Reusable connection profiles                             |
 | `log_query` / `log_stats` / `log_clear`            | Query, inspect, clear host logs                          |
-| `service_info`                                     | Service name, version, changelog                         |
+| `service_info`                                     | Service name, version, endpoints/storage/limits, changelog |
 
 Full parameters, examples, and read-only/destructive hints: [docs/tools.md](docs/tools.md).
 
@@ -155,6 +155,8 @@ Common variables; the full table is in [docs/configuration.md](docs/configuratio
 | `SERIAL_HUB_MCP_HTTP_HOST`      | `127.0.0.1`                                    | HTTP bind host                                            |
 | `SERIAL_HUB_MCP_HTTP_PORT`      | `8787`                                         | HTTP bind port                                            |
 | `SERIAL_HUB_MCP_HTTP_TOKEN`     | unset                                          | **Secret.** Bearer token; required for non-loopback binds |
+| `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`| unset                                          | **Secret file.** Read token from file; env wins           |
+| `SERIAL_HUB_MCP_PUBLIC_URL`     | unset                                          | Access URL shown on `/info`; defaults to `Host` header    |
 | `SERIAL_HUB_MCP_HTTP_UI`        | `1`                                            | `0` disables the Web UI                                   |
 | `SERIAL_HUB_MCP_STORE`          | `v2`                                           | `v2` (segments + SQLite) or `legacy` (JSONL)              |
 | `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7`                                            | Delete logs/dumps/captures older than this; `0` disables  |
@@ -169,7 +171,11 @@ variable wins over the file. See [docs/configuration.md](docs/configuration.md#å
 
 - **stdio**: run `node src/server.js` from your MCP client.
 - **Streamable HTTP**: `--http` exposes `/mcp`, `/health`, `/info`, `/dumps/<file_id>`, and the
-  Web UI at `/`.
+  Web UI at `/`. `/info` is a self-describing page: JSON for scripts,
+  `?format=html` (or any browser) for humans â€” deployment, storage, limits, endpoints, and
+  copy-paste client setup. It is unauthenticated and never contains the token. The same data is
+  returned by the `service_info` tool; conventions live in
+  [docs/info-page.md](docs/info-page.md).
 - **Docker MCP**: [docker/serial-hub-mcp.Dockerfile](docker/serial-hub-mcp.Dockerfile) and the
   compose files in [docker/](docker/).
 - **x86 serial hub**: [docs/x86-hub-server.md](docs/x86-hub-server.md).
@@ -201,6 +207,7 @@ have not been ACKed. Wire format: [docs/remote-link-protocol-v1.md](docs/remote-
 | [Configuration](docs/configuration.md)         | Every environment variable and path        |
 | [Deployment](docs/deployment.md)               | stdio, HTTP, Docker, systemd, Harbor       |
 | [Remotes](docs/remotes.md)                     | `remotes.json` and aggregated `list_ports` |
+| [Info page](docs/info-page.md)                 | `/info` contract, sections, and template   |
 | [x86 hub-server](docs/x86-hub-server.md)       | Multi-port Linux service                   |
 | [Protocol v1](docs/remote-link-protocol-v1.md) | Binary wire contract                       |
 | [Storage](docs/storage.md)                     | Log model, v2 store, retention, dumps      |

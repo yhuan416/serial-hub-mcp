@@ -11,6 +11,8 @@ log_stats()
 ```bash
 curl -s http://127.0.0.1:8787/health
 curl -s http://127.0.0.1:8787/info
+curl -s 'http://127.0.0.1:8787/info?format=html'   # 浏览器可读版（或直接开浏览器）
+curl -s http://<hub>:7000/info                      # x86 hub 自描述（与 7000 同端口）
 docker logs --tail 100 serial-hub-mcp
 ```
 
@@ -27,6 +29,8 @@ docker logs --tail 100 serial-hub-mcp
 | `/api/*` 返回 401                                        | Web UI 数据接口也要 token               | 页面里输入同一个 token                                                                                 |
 | `/dumps/<id>` 401/404                                    | token 不对，或 file_id 过期/被 TTL 清理 | 重新 `dump_to_file`；确认 `SERIAL_HUB_MCP_DUMPS_DIR`                                                   |
 | 页面能开但一直连不上                                     | 反向代理缓冲了 SSE                      | 代理关闭缓冲，保留 `text/event-stream`                                                                 |
+| `/info` 里的访问地址是容器 ID / `127.0.0.1`              | 只按监听地址兜底，没有 Host / PUBLIC_URL | 设置 `SERIAL_HUB_MCP_PUBLIC_URL`（hub 用 `SERIAL_HUB_SERVER_PUBLIC_URL`），或确认反代转发 Host          |
+| `<hub>:7000/info` 打不开                                 | 旧版本没有 HTTP 自描述，或代理只转 TCP   | 升级到带 `/info` 的版本；直接访问 hub 的 7000 端口，不要经过只做 TCP 的转发                              |
 | 绑定 `0.0.0.0` 后本机 curl 不通                          | 端口被占用/防火墙                       | `ss -ltnp \| grep 8787`，检查安全组                                                                    |
 
 ## 本机串口

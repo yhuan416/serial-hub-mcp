@@ -31,7 +31,7 @@
 | `log_query`      | ✅   |        | 检索 host 日志                            |
 | `log_stats`      | ✅   |        | 日志存储统计                              |
 | `log_clear`      |      | ✅     | 清空 host 日志                            |
-| `service_info`   | ✅   |        | 服务名、版本、changelog                   |
+| `service_info`   | ✅   |        | 服务名、版本、端点/存储/限额、changelog     |
 
 `read` 会推进读游标，所以不是幂等的，但不修改外部环境；`dump_to_file` 会创建文件。
 `profile_save` 会覆盖同名 profile，`log_clear` / `profile_delete` 会删数据。
@@ -217,4 +217,7 @@ profile 存在 `$XDG_CONFIG_HOME/serial-hub-mcp/profiles.json`；容器里用
 service_info()
 ```
 
-返回服务名、版本、端点、工具数，以及 `CHANGELOG.md` 的前 20 行。排查“连的是哪个版本”先看它。
+返回服务名、版本、端点、部署（运行时/访问地址/启动时间）、存储（路径与体积/保留上限）、
+限额（请求体/工具数/远端数）、接入片段，以及 `CHANGELOG.md` 的前 20 行。
+排查“连的是哪个版本”先看它；HTTP 模式下与 `GET /info` 同一份数据
+（加 `?format=html` 是可读页面）。

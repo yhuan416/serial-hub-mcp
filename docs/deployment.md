@@ -31,7 +31,7 @@ SERIAL_HUB_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" \
 | ------------------ | -------------- | ---------------------------- |
 | `/mcp`             | Bearer         | MCP Streamable HTTP          |
 | `/health`          | 免             | 健康检查                     |
-| `/info`            | 免             | 服务信息、工具数、changelog  |
+| `/info`            | 免             | 自描述：部署/存储/限额/端点/接入；`?format=html` 可读页 |
 | `/dumps/<file_id>` | Bearer         | 下载 `dump_to_file` 产物     |
 | `/`                | 免（页面本身） | Web UI；`/api/*` 仍需 Bearer |
 
@@ -45,12 +45,33 @@ SERIAL_HUB_MCP_HTTP_TOKEN="$(openssl rand -hex 32)" \
   的环境变量里。
 - 关闭网页界面：`SERIAL_HUB_MCP_HTTP_UI=0`。
 
+### 部署后自描述：`GET /info`
+
+服务起来后先看这一页，能省掉一半「这台机器跑的是哪个版本、数据放哪」的沟通：
+
+```bash
+curl -s http://127.0.0.1:8787/info            # JSON（脚本/巡检）
+curl -s 'http://127.0.0.1:8787/info?format=html'  # 人看的页面
+```
+
+浏览器直接打开 `/info` 会自动给 HTML（`Accept` 协商），`curl` 默认拿 JSON。
+页面包含部署（运行时、版本、访问地址、启动时间）、存储（目录与体积、保留上限）、
+限额（请求体、工具数、远端数）、端点（路径 + 鉴权 + 用途）和可粘贴的接入步骤。
+免鉴权，但**不含 token**。MCP 的 `service_info` 工具返回同一份数据。
+
+容器里的「访问地址」优先取 `SERIAL_HUB_MCP_PUBLIC_URL`，其次取请求的 `Host` 头；
+不要用容器 hostname（那是容器 ID）。字段约定和复用模板见 [info-page.md](info-page.md)。
+
+```bash
+-e SERIAL_HUB_MCP_PUBLIC_URL=https://serial-hub.example.com
+```
+
 ## Docker：MCP 中心
 
 镜像只做 MCP 中心，不挂串口；本机串口由旁边的 `serial-hub-server` 通过 TCP 暴露。
 
 ```bash
-docker build -f docker/serial-hub-mcp.Dockerfile -t serial-hub-mcp:0.3.3 .
+docker build -f docker/serial-hub-mcp.Dockerfile -t serial-hub-mcp:0.3.4 .
 
 docker run -d --name serial-hub-mcp --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
@@ -58,7 +79,7 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
   -e SERIAL_HUB_MCP_HTTP_TOKEN="$(cat ~/.config/serial-hub-mcp/http.token)" \
   -v ~/.local/share/serial-hub-mcp:/data \
   -v ~/.config/serial-hub-mcp:/config:ro \
-  serial-hub-mcp:0.3.3
+  serial-hub-mcp:0.3.4
 
 # 更推荐：token 走文件，避免出现在 docker inspect 的环境变量里
 docker run -d --name serial-hub-mcp --restart unless-stopped \
@@ -68,7 +89,7 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
   -v ~/.local/share/serial-hub-mcp:/data \
   -v ~/.config/serial-hub-mcp:/config:ro \
   -v ~/.config/serial-hub-mcp/http.token:/run/secrets/mcp_http_token:ro \
-  serial-hub-mcp:0.3.3
+  serial-hub-mcp:0.3.4
 ```
 
 镜像里已经设置：
@@ -116,6 +137,9 @@ docker compose -f docker/docker-compose.hub.yml up -d --build
 - `--ports` 只暴露真实在用的串口，避免把 `ttyS*` 全部暴露。
 - hub token 可以用 `SERIAL_HUB_SERVER_TOKEN_FILE` 挂载文件，或直接放进 `<data-dir>/token`；
   后者是默认生成位置（0600）。
+- 7000 端口同时响应 HTTP：`http://<hub>:7000/info`（自描述，`?format=html` 可读页）和
+  `/health`。连接首字节是 `GET` / `HEAD` 时按 HTTP 处理，其余仍走二进制 SH 帧。
+  页面显示地址用 `SERIAL_HUB_SERVER_PUBLIC_URL` 覆盖（容器里不要用 hostname）。
 
 n100 之类的现成 compose 见 [docker/docker-compose.n100.yml](../docker/docker-compose.n100.yml)。
 完整参数见 [x86-hub-server.md](x86-hub-server.md)。
@@ -139,8 +163,8 @@ sudo cat /var/lib/serial-hub-server/token
 
 ```bash
 docker build -f docker/serial-hub-mcp.Dockerfile \
-  -t harbor.example.com/ipcs/serial-hub-mcp:0.3.3 .
-docker push harbor.example.com/ipcs/serial-hub-mcp:0.3.3
+  -t harbor.example.com/ipcs/serial-hub-mcp:0.3.4 .
+docker push harbor.example.com/ipcs/serial-hub-mcp:0.3.4
 ```
 
 Harbor 是私有的，没有公开 pulls badge；README 里不要放会 404 的 npm/Docker 动态徽章。
@@ -154,7 +178,7 @@ MCP 的连接、capture、读游标都在进程内存里，替换容器会让当
 ```bash
 # 升级
 docker rm -f serial-hub-mcp
-docker run -d ... harbor.example.com/ipcs/serial-hub-mcp:0.3.3
+docker run -d ... harbor.example.com/ipcs/serial-hub-mcp:0.3.4
 
 # 回滚：把镜像 tag 换回 0.3.1
 ```

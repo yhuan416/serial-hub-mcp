@@ -134,7 +134,7 @@ open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", p
 | `set_dtr_rts` / `send_break`                       | 控制线与 BREAK                                |
 | `profile_list` / `profile_save` / `profile_delete` | 连接参数复用                                  |
 | `log_query` / `log_stats` / `log_clear`            | 查询、统计、清空 host 日志                    |
-| `service_info`                                     | 服务名、版本、changelog                       |
+| `service_info`                                     | 服务名、版本、端点/存储/限额、changelog       |
 
 完整参数、示例和只读/破坏性提示：[docs/tools.md](docs/tools.md)。
 
@@ -148,6 +148,8 @@ open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", p
 | `SERIAL_HUB_MCP_HTTP_HOST`      | `127.0.0.1`                                    | HTTP 绑定地址                                |
 | `SERIAL_HUB_MCP_HTTP_PORT`      | `8787`                                         | HTTP 绑定端口                                |
 | `SERIAL_HUB_MCP_HTTP_TOKEN`     | 未设置                                         | **密钥。** Bearer token；绑非回环地址时必填  |
+| `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`| 未设置                                         | **密钥文件。** 从文件读取 token；环境变量优先 |
+| `SERIAL_HUB_MCP_PUBLIC_URL`     | 未设置                                         | `/info` 显示的访问地址；默认取 Host 头       |
 | `SERIAL_HUB_MCP_HTTP_UI`        | `1`                                            | `0` 关闭网页界面                             |
 | `SERIAL_HUB_MCP_STORE`          | `v2`                                           | `v2`（segment + SQLite）或 `legacy`（JSONL） |
 | `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7`                                            | 日志/dump/捕获保留天数；`0` 关闭             |
@@ -162,6 +164,9 @@ open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", p
 
 - **stdio**：在 MCP 客户端里直接运行 `node src/server.js`。
 - **Streamable HTTP**：`--http` 提供 `/mcp`、`/health`、`/info`、`/dumps/<file_id>` 和网页界面。
+  `/info` 是自描述页：脚本拿 JSON，浏览器或 `?format=html` 拿可读页面，包含部署、存储、限额、
+  端点和可直接粘贴的客户端配置；免鉴权且不含 token。MCP 的 `service_info` 工具返回同一份数据，
+  约定见 [docs/info-page.md](docs/info-page.md)。
 - **Docker MCP**：[docker/serial-hub-mcp.Dockerfile](docker/serial-hub-mcp.Dockerfile) 与
   [docker/](docker/) 下的 compose。
 - **x86 串口服务**：[docs/x86-hub-server.md](docs/x86-hub-server.md)。
@@ -193,6 +198,7 @@ host 负责切行、`seq`、日志和读游标；远端只保留未 ACK 的字�
 | [Configuration](docs/configuration.md)         | 全部环境变量与路径                   |
 | [Deployment](docs/deployment.md)               | stdio、HTTP、Docker、systemd、Harbor |
 | [Remotes](docs/remotes.md)                     | `remotes.json` 与 `list_ports` 汇总  |
+| [Info page](docs/info-page.md)                 | `/info` 约定、五段骨架与模板         |
 | [x86 hub-server](docs/x86-hub-server.md)       | 多端口 Linux 服务                    |
 | [Protocol v1](docs/remote-link-protocol-v1.md) | 二进制线格式契约                     |
 | [Storage](docs/storage.md)                     | 日志模型、v2 store、保留、dump       |

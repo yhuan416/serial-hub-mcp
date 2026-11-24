@@ -64,6 +64,16 @@ node src/server.js --http --host 0.0.0.0 --allow-anonymous
 
 这只适合隔离的实验网络。
 
+启动后先打开自描述页，确认版本、存储和接入参数：
+
+```bash
+curl -s http://127.0.0.1:8787/info              # JSON
+open http://127.0.0.1:8787/info?format=html     # 可读页面
+```
+
+页面里有可直接粘贴的客户端配置。x86 `serial-hub-server` 同样支持
+`http://<hub>:7000/info`（与二进制端口同端口）。
+
 ## 4. 接 MCP 客户端
 
 ### stdio

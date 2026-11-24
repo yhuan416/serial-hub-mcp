@@ -107,6 +107,7 @@ async function main() {
   const server = new HubServer({
     dataDir,
     token,
+    tokenSource,
     fwVersion: pkg.version,
     portFilter: ports,
     ringBytes: parseBytes(
@@ -155,6 +156,12 @@ async function main() {
       : `${listen.host}:${listen.port}`;
   console.log(`[serial-hub-server] v${pkg.version} listening on ${where}`);
   console.log(`[serial-hub-server] data-dir=${dataDir} token-source=${tokenSource}`);
+  const publicBase = (process.env.SERIAL_HUB_SERVER_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+  const infoHost =
+    !listen.host || listen.host === "0.0.0.0" || listen.host === "::"
+      ? `<host>:${addr?.port ?? listen.port}`
+      : where;
+  console.log(`[serial-hub-server] self-describing: ${publicBase || `http://${infoHost}`}/info`);
   const list = server.manager.list();
   console.log(
     `[serial-hub-server] ports=${list.length}${list.length ? ` (${list.map((p) => p.id).join(", ")})` : ""}`,

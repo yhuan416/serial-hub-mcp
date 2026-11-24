@@ -29,8 +29,9 @@ node src/hub-server/index.js --listen 0.0.0.0:7000 \
 启动输出示例：
 
 ```
-[serial-hub-server] v0.3.3 listening on 0.0.0.0:7000
+[serial-hub-server] v0.3.4 listening on 0.0.0.0:7000
 [serial-hub-server] data-dir=/var/lib/serial-hub-server token-source=file (/var/lib/serial-hub-server/token)
+[serial-hub-server] self-describing: http://<host>:7000/info
 [serial-hub-server] ports=2 (ttyACM1, ttyACM0)
 ```
 
@@ -58,11 +59,33 @@ token 读取顺序：`--token` > `SERIAL_HUB_SERVER_TOKEN` > `SERIAL_HUB_SERVER_
 | `--capture-linger-ms` | `60000`                                    | 最后一个会话离开后，capture 再留多久                           |
 | `--lease-ms`          | `120000`                                   | 会话租约。ping 会续租                                          |
 
-环境变量同名映射：`SERIAL_HUB_SERVER_TOKEN/LISTEN/DATA_DIR/PORTS/RING_BYTES/RETENTION_BYTES/CAPTURE_MAX_BYTES/CAPTURE_LINGER_MS/LEASE_MS`。token 也可以用 `SERIAL_HUB_SERVER_TOKEN_FILE` 指向文件。
+环境变量同名映射：`SERIAL_HUB_SERVER_TOKEN/LISTEN/DATA_DIR/PORTS/RING_BYTES/RETENTION_BYTES/CAPTURE_MAX_BYTES/CAPTURE_LINGER_MS/LEASE_MS`，另有 `SERIAL_HUB_SERVER_PUBLIC_URL`（`/info` 显示的访问地址）。token 也可以用 `SERIAL_HUB_SERVER_TOKEN_FILE` 指向文件。
 
 这些不进 MCP 工具列表。要改就重启 hub 时带上参数。发送缓存也可以对 hub 发 v1 控制帧 `{"op":"cache_set","cap_bytes":134217728}`。`applied=next` 表示当前 capture 还用旧缓冲，最后一个会话离开并过 60 秒后新建才换。
 
-## 3. Docker 部署
+## 3. 自描述 `/info` 与 `/health`
+
+hub 的主端口只收二进制 SH 帧，但连接首字节是 `GET` / `HEAD` 时按 HTTP 处理，
+所以浏览器直接打开就有页面，不需要额外开端口：
+
+```bash
+curl -s http://<hub>:7000/info                    # JSON
+curl -s 'http://<hub>:7000/info?format=html'      # 可读页面
+curl -s http://<hub>:7000/health                  # {"ok":true,...}
+```
+
+页面和 JSON 免鉴权、不含 token，包含：
+
+- 部署：版本、运行时、监听地址、启动时间、boot_id、串口列表、token 来源（`file` / `env` / `--token`）
+- 存储：`--data-dir`、各端口日志目录的体积、保留上限与天数
+- 限制：ring/segment/retention、`max_frame`、窗口、lease、capture 上限、扫描周期、`--ports` 过滤
+- 端点：`tcp://<hub>:7000`（SH 帧）、`/info`、`/health`
+- 接入步骤：`remotes.json` 片段、`serial-hub_open` 示例、`curl` 验证
+
+非 `GET` / `HEAD` 返回 405；其它路径返回 404；非 HTTP 且非 `SH` 首字节仍按原行为直接断开。
+容器里显示的访问地址用 `SERIAL_HUB_SERVER_PUBLIC_URL` 覆盖——容器 hostname 是容器 ID，对人没有意义。
+
+## 4. Docker 部署
 
 ```bash
 cd serial-hub-mcp
@@ -90,7 +113,7 @@ docker compose -f docker/docker-compose.n100.yml up -d   # 自动 pull Harbor �
 - 数据目录 `/data` 挂到命名卷，token 通过 `env_file`（0600）注入。
 - 容器内默认 `--ports /dev/ttyUSB,/dev/ttyACM,/dev/serial/`。
 
-## 4. 用 MCP 连接
+## 5. 用 MCP 连接
 
 ```text
 serial-hub_open(
@@ -137,7 +160,7 @@ sudo cat /var/lib/serial-hub-server/token     # 取 token 填到 MCP
 - 运行用户加入 `dialout` 组（Debian/Ubuntu）。
 - 磁盘保留按现场日志量调整（`--retention-bytes/--retention-days`）。
 
-## 8. 链路
+## 9. 链路
 
 只接受二进制帧（魔数 `SH`）。非 `SH` 首字节直接断开。
 

@@ -67,15 +67,15 @@ API 里定位，不需要仓库 admin 权限下载日志。
 
 ## 发布
 
-以 `0.3.3` 为例。
+以 `0.3.4` 为例。
 
 ### 1. 版本与 changelog
 
 ```bash
-npm version 0.3.3 --no-git-tag-version
+npm version 0.3.4 --no-git-tag-version
 ```
 
-把 `CHANGELOG.md` 的 `## Unreleased` 内容移到 `## 0.3.3 — YYYY-MM-DD`，保留新的空
+把 `CHANGELOG.md` 的 `## Unreleased` 内容移到 `## 0.3.4 — YYYY-MM-DD`，保留新的空
 `## Unreleased`。
 
 ### 2. 验证
@@ -91,9 +91,9 @@ npm run lint
 
 ```bash
 git add -A
-git commit -m "release: 0.3.3"
-git tag -a v0.3.3 -m "serial-hub-mcp 0.3.3"
-git push origin master v0.3.3
+git commit -m "release: 0.3.4"
+git tag -a v0.3.4 -m "serial-hub-mcp 0.3.4"
+git push origin master v0.3.4
 ```
 
 如果远端 master 有新提交，先 merge/rebase 再 push；tag 只打在发布提交上。
@@ -102,8 +102,8 @@ git push origin master v0.3.3
 
 ```bash
 docker build -f docker/serial-hub-mcp.Dockerfile \
-  -t harbor.example.com/ipcs/serial-hub-mcp:0.3.3 .
-docker push harbor.example.com/ipcs/serial-hub-mcp:0.3.3
+  -t harbor.example.com/ipcs/serial-hub-mcp:0.3.4 .
+docker push harbor.example.com/ipcs/serial-hub-mcp:0.3.4
 ```
 
 如果同时改了 `serial-hub-server`，用
@@ -119,7 +119,7 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
   -e SERIAL_HUB_MCP_HTTP_TOKEN="$(cat ~/.config/serial-hub-mcp/http.token)" \
   -v ~/.local/share/serial-hub-mcp:/data \
   -v ~/.config/serial-hub-mcp:/config:ro \
-  harbor.example.com/ipcs/serial-hub-mcp:0.3.3
+  harbor.example.com/ipcs/serial-hub-mcp:0.3.4
 ```
 
 部署会断开当前内存里的串口会话；日志和游标在 `/data`，重开可续。
@@ -128,10 +128,12 @@ docker run -d --name serial-hub-mcp --restart unless-stopped \
 
 ```bash
 curl -s http://127.0.0.1:8788/health
-curl -s http://127.0.0.1:8788/info
+curl -s http://127.0.0.1:8788/info                    # JSON：版本、部署、存储、限额
+curl -s 'http://127.0.0.1:8788/info?format=html'      # 页面：可直接转给同事
 ```
 
-再调一次 `service_info` 和 `list_ports`。确认版本、工具数、远端来源。
+再调一次 `service_info` 和 `list_ports`。确认版本、工具数、远端来源，以及 `/info`
+里的部署/存储与预期一致。
 
 ### 7. 回滚
 

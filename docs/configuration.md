@@ -52,7 +52,8 @@
 | `SERIAL_HUB_MCP_HTTP_PORT`            | `8787`      | 绑定端口                                                |
 | `SERIAL_HUB_MCP_HTTP_PATH`            | `/mcp`      | MCP 端点路径                                            |
 | `SERIAL_HUB_MCP_HTTP_HEALTH_PATH`     | `/health`   | 健康检查，免鉴权                                        |
-| `SERIAL_HUB_MCP_HTTP_INFO_PATH`       | `/info`     | 服务信息，免鉴权                                        |
+| `SERIAL_HUB_MCP_HTTP_INFO_PATH`       | `/info`     | 自描述页/JSON，免鉴权                                   |
+| `SERIAL_HUB_MCP_PUBLIC_URL`           | 未设置      | `/info` 显示的访问地址；默认用请求的 `Host` 头          |
 | `SERIAL_HUB_MCP_HTTP_TOKEN`           | 未设置      | **密钥。** `/mcp`、`/api/*`、`/dumps/*` 的 Bearer token |
 | `SERIAL_HUB_MCP_HTTP_TOKEN_FILE`      | 未设置      | **密钥文件。** 从文件读取 token；直接环境变量优先       |
 | `SERIAL_HUB_MCP_HTTP_ALLOWED_HOSTS`   | 见下文      | 逗号分隔的允许 Host，必须包含端口                       |
@@ -109,6 +110,7 @@ segment/block 索引；`legacy` 回到旧的 JSONL 实现。
 | `SERIAL_HUB_SERVER_TOKEN`             | 自动生成 `<data-dir>/token`（0600）        | **密钥。** HELLO 鉴权 token                |
 | `SERIAL_HUB_SERVER_TOKEN_FILE`        | 未设置                                     | **密钥文件。** 从文件读取 hub token        |
 | `SERIAL_HUB_SERVER_LISTEN`            | `0.0.0.0:7000`                             | 监听地址                                   |
+| `SERIAL_HUB_SERVER_PUBLIC_URL`        | 未设置                                     | `/info` 显示的访问地址；默认取请求 Host     |
 | `SERIAL_HUB_SERVER_DATA_DIR`          | `~/.local/share/serial-hub-server`         | 数据与 token 目录                          |
 | `SERIAL_HUB_SERVER_PORTS`             | `/dev/ttyUSB,/dev/ttyACM,/dev/serial/,COM` | 端口路径子串或 `/regex/`；空字符串暴露全部 |
 | `SERIAL_HUB_SERVER_RING_BYTES`        | `64MiB`                                    | 每端口环形缓冲                             |

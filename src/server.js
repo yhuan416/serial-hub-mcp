@@ -22,6 +22,8 @@ import { fileURLToPath } from "node:url";
 import { buildServer, runStdio } from "./sdk/server.js";
 import { runHttp } from "./sdk/http.js";
 import { buildServiceInfo } from "./sdk/service-info.js";
+import { buildMcpInfo } from "./info.js";
+import { loadRemotes } from "./remotes.js";
 import { createWebApi } from "./web_api.js";
 import { ConnectionManager } from "./connection.js";
 import { LogStore } from "./log_store.js";
@@ -38,6 +40,9 @@ const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
 const SERVICE = "serial-hub-mcp";
 const CHANGELOG_PATH = fileURLToPath(new URL("../CHANGELOG.md", import.meta.url));
+const STARTED_AT_MS = Date.now();
+const CACHE_HOME = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+const CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
 
 function argValue(flag) {
   const i = process.argv.indexOf(flag);
@@ -105,14 +110,24 @@ const storeOptions = {
   blockBytes: Number(process.env.SERIAL_HUB_MCP_STORE_BLOCK_BYTES) || undefined,
   flushMs: Number(process.env.SERIAL_HUB_MCP_STORE_FLUSH_MS) || undefined,
 };
-const storeBase = path.join(
-  process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"),
-  "serial-hub-mcp",
-  "store",
-);
+const storeBase = path.join(CACHE_HOME, "serial-hub-mcp", "store");
 const localStoreDir = process.env.SERIAL_HUB_MCP_STORE_DIR || path.join(storeBase, "local");
 const remoteStoreDir =
   process.env.SERIAL_HUB_MCP_REMOTE_STORE_DIR || path.join(storeBase, "remote");
+// 缓存目录只用于 /info 展示（与各模块的默认值保持一致）。
+const paths = {
+  logs: process.env.SERIAL_HUB_MCP_LOGS_DIR || path.join(CACHE_HOME, "serial-hub-mcp", "logs"),
+  localStore: localStoreDir,
+  remoteStore: remoteStoreDir,
+  dumps: process.env.SERIAL_HUB_MCP_DUMPS_DIR || path.join(CACHE_HOME, "serial-hub-mcp", "dumps"),
+  sync:
+    process.env.SERIAL_HUB_MCP_SYNC_DIR || path.join(CACHE_HOME, "serial-hub-mcp", "remote-sync"),
+  v1Cache:
+    process.env.SERIAL_HUB_MCP_V1_CACHE_DIR || path.join(CACHE_HOME, "serial-hub-mcp", "v1-cache"),
+  profiles: process.env.SERIAL_HUB_MCP_PROFILES_DIR || path.join(CONFIG_HOME, "serial-hub-mcp"),
+  opens:
+    process.env.SERIAL_HUB_MCP_OPENS_FILE || path.join(CACHE_HOME, "serial-hub-mcp", "opens.json"),
+};
 const logStore =
   storeMode === "legacy"
     ? new LogStore({
@@ -135,7 +150,44 @@ const logRouter = new LogRouter(logStore, { remoteStore });
 const manager = new ConnectionManager(logRouter, { remoteStore });
 // 按连接串行：同连接排队，跨连接并发（hub 多设备必需）。
 const queue = keyedSerialQueue();
-const tools = buildTools(manager, logRouter, { version: pkg.version });
+
+// /info 与 service_info 同源：同一份构建函数；HTTP 请求时再按 Host 补 publicUrl。
+const remotesSummary = () => {
+  try {
+    const { remotes } = loadRemotes();
+    return { count: remotes.length, names: remotes.map((r) => r.name) };
+  } catch (_) {
+    return { count: 0, names: [] };
+  }
+};
+let tools;
+const infoContext = (req) => ({
+  version: pkg.version,
+  storeMode,
+  paths,
+  storeOptions,
+  cacheTtlDaysValue: cacheTtlDays(),
+  toolsCount: tools?.length,
+  remotes: remotesSummary(),
+  startedAtMs: STARTED_AT_MS,
+  http: httpMode
+    ? {
+        host: httpHost,
+        port: httpPort,
+        path: httpPath,
+        healthPath: httpHealthPath,
+        infoPath: httpInfoPath,
+        uiEnabled: httpUiEnabled,
+        tokenRequired: Boolean(httpToken),
+        anonymousAllowed: !httpToken,
+      }
+    : undefined,
+  req,
+});
+tools = buildTools(manager, logRouter, {
+  version: pkg.version,
+  infoExtra: () => buildMcpInfo(infoContext()),
+});
 
 // 每个 HTTP 请求一个 server（无状态），但共享同一个 manager/router/queue。
 const createServer = () => buildServer({ name: SERVICE, version: pkg.version, tools, queue });
@@ -155,19 +207,13 @@ if (httpMode) {
     webDir: httpUiEnabled ? fileURLToPath(new URL("./web/", import.meta.url)) : undefined,
     apiHandler: httpUiEnabled ? createWebApi({ manager, tools, queue }) : undefined,
     health: { ok: true, service: SERVICE, version: pkg.version, transport: "http" },
-    info: buildServiceInfo({
-      service: SERVICE,
-      version: pkg.version,
-      endpoints: {
-        mcp: httpPath,
-        health: httpHealthPath,
-        info: httpInfoPath,
-        dumps: "/dumps/{file_id}",
-        ...(httpUiEnabled ? { ui: "/" } : {}),
-      },
-      changelogPath: CHANGELOG_PATH,
-      extra: { tools_count: tools.length },
-    }),
+    info: (req) =>
+      buildServiceInfo({
+        service: SERVICE,
+        version: pkg.version,
+        changelogPath: CHANGELOG_PATH,
+        dynamic: () => buildMcpInfo(infoContext(req)),
+      }),
     resolveDump,
     onShutdown: async () => {
       cacheSweep.stop();
