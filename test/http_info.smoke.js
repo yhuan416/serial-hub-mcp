@@ -49,7 +49,7 @@ test("MCP /info：JSON 自描述 + 免鉴权 + 不含 token", async (t) => {
     },
     storeOptions: { retainBytes: 512 * 1024 * 1024 },
     cacheTtlDaysValue: 7,
-    toolsCount: 19,
+    toolsCount: 20,
     remotes: { count: 1, names: ["lab"] },
     startedAtMs: Date.now() - 65_000,
     http: {
@@ -77,14 +77,14 @@ test("MCP /info：JSON 自描述 + 免鉴权 + 不含 token", async (t) => {
   const info = await res.json();
   assert.equal(info.service, "serial-hub-mcp");
   assert.equal(info.version, "1.2.3");
-  assert.equal(info.tools_count, 19);
+  assert.equal(info.tools_count, 20);
   assert.equal(info.deployment.transport, "http");
   assert.equal(info.deployment.uptimeSeconds >= 60, true);
   assert.equal(info.deployment.publicUrl, `http://127.0.0.1:${port}`);
   assert.equal(info.deployment.auth.includes("Bearer"), true);
   assert.equal(info.storage.mode, "v2");
   assert.ok(info.storage.localStoreSize.includes("2.0 KiB"));
-  assert.equal(info.limits.tools, 19);
+  assert.equal(info.limits.tools, 20);
   assert.equal(info.limits.remotes, 1);
   assert.equal(info.endpoints.mcp.path, "/mcp");
   assert.ok(info.integration.snippets.some((s) => s.code.includes("/mcp")));

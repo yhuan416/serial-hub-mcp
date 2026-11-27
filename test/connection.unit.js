@@ -231,3 +231,21 @@ test("subscribe 收到 rx/tx/closed，退订后不再回调", async () => {
   conn._onData(Buffer.from("more"));
   assert.equal(seen.length, 3);
 });
+
+test("status：打开时间与最后收发时间", async () => {
+  const conn = new Connection(null, fakePort(), { rx_buffer_size: 100 });
+  const st0 = conn.status();
+  assert.ok(Number.isFinite(st0.opened_at));
+  assert.equal(st0.last_rx_at, null);
+  assert.equal(st0.last_tx_at, null);
+
+  conn._onData(Buffer.from("hi"));
+  const st1 = conn.status();
+  assert.ok(st1.last_rx_at >= st0.opened_at);
+  assert.equal(st1.last_tx_at, null);
+
+  await conn.write(Buffer.from("x"));
+  const st2 = conn.status();
+  assert.ok(st2.last_tx_at >= st0.opened_at);
+  assert.ok(st2.idle_ms >= 0 && st2.idle_ms < 60_000);
+});

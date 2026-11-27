@@ -14,6 +14,40 @@ import { listOpens, recordOpen } from "../open_log.js";
 
 export const connId = z.string().min(1).describe("连接 ID（由 open 返回）");
 
+// 判断“同一路物理串口 + 同一帧格式”的指纹，用于 open 的重复提示。
+// 故意不包含 newline（发送默认值，可在 write 时覆盖）和 v1_* 调优项。
+function connKeyOf(statusOrConfig) {
+  const c = statusOrConfig.config || statusOrConfig;
+  const transport = statusOrConfig.transport || c.transport || "serial";
+  // remote 的“端口”在 config.port_id 里，serial 在 port 里，归一化成一个槽位。
+  const portId = c.port_id || statusOrConfig.port || c.port || "";
+  return [
+    transport,
+    statusOrConfig.endpoint || c.endpoint || "",
+    portId,
+    c.baud_rate ?? 115200,
+    c.data_bits ?? 8,
+    c.stop_bits ?? 1,
+    c.parity ?? "none",
+    c.flow_control ?? "none",
+  ].join("|");
+}
+
+function summarizeConn(status) {
+  return {
+    connection_id: status.connection_id,
+    transport: status.transport,
+    endpoint: status.endpoint ?? null,
+    port: status.port ?? null,
+    opened_at: status.opened_at ?? null,
+    last_rx_at: status.last_rx_at ?? null,
+    idle_ms: status.idle_ms ?? null,
+    bytes_in: status.bytes_in,
+    bytes_out: status.bytes_out,
+    ...(status.writer === undefined ? {} : { writer: status.writer }),
+  };
+}
+
 const dataField = z
   .union([
     z.string().describe("将要发送/匹配的字符或 hex/base64 串"),
@@ -323,6 +357,7 @@ export const connTools = (manager) => [
       "baud_rate 默认 115200；data_bits 默认 8；stop_bits 默认 1；parity 默认 none；flow_control 默认 none。" +
       "newline 设置发送默认追加的换行（write/transact 未显式指定时的默认）。" +
       "成功后返回 connection_id，后续 read/write/transact 用它。" +
+      "打开前可先 list_connections：参数相同的连接已存在时，返回里会带 duplicate_of，建议复用或先 close。" +
       "同一路 UART 只有一个 writer。第二路要写时传 claim_writer:true。" +
       "可选 name 给这次打开起名。成功后按 endpoint+port_id+波特率去重记入 open_list。返回里的 token 为 ***。",
     inputSchema: z.object({
@@ -440,8 +475,27 @@ export const connTools = (manager) => [
       delete merged.vid;
       delete merged.pid;
 
-      const response = await manager.open(merged);
+      const wantKey = connKeyOf(merged);
+      const existing = manager.list().filter((s) => connKeyOf(s) === wantKey);
+
+      let response;
+      try {
+        response = await manager.open(merged);
+      } catch (err) {
+        if (existing.length) {
+          const ids = existing.map((s) => s.connection_id).join(", ");
+          throw new Error(
+            `${err.message}\n相同参数的连接已存在：${ids}。请复用它的 connection_id，或先 close 再打开。`,
+          );
+        }
+        throw err;
+      }
       recordOpen(response, openName);
+      if (existing.length) {
+        response.duplicate_of = existing.map(summarizeConn);
+        response.hint =
+          "相同参数的连接已经存在，建议复用它的 connection_id，或先 close；重复打开会多占一个连接和一份日志。";
+      }
       return { ok: true, response };
     },
   }),
@@ -462,6 +516,51 @@ export const connTools = (manager) => [
       name: z.string().optional().describe("按名字子串过滤，不区分大小写"),
     }),
     handler: async (args) => ({ ok: true, response: listOpens(args) }),
+  }),
+
+  defineTool({
+    name: "list_connections",
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    title: "活动连接",
+    description:
+      "列出当前进程里仍然打开的所有连接：端口/端点、波特率、打开时间、最后收发时间、空闲时长、收发字节、远端 writer 状态。" +
+      "open 之前先查这里，能复用就不要重复打开；长期不用的连接用 close 关掉。默认按空闲时间从长到短排序。",
+    inputSchema: z.object({
+      port: z.string().optional().describe("按端口/路径/端点过滤（子串，不区分大小写）"),
+      transport: z.enum(["serial", "remote"]).optional().describe("只看某类链路"),
+      idle_minutes: z
+        .number()
+        .min(0)
+        .optional()
+        .describe("只看空闲超过 N 分钟的连接（找没人用的连接用）"),
+    }),
+    handler: async (args) => {
+      let list = manager.list();
+      if (args.transport) list = list.filter((s) => s.transport === args.transport);
+      if (args.port) {
+        const q = args.port.toLowerCase();
+        list = list.filter(
+          (s) =>
+            String(s.port || "")
+              .toLowerCase()
+              .includes(q) ||
+            String(s.endpoint || "")
+              .toLowerCase()
+              .includes(q),
+        );
+      }
+      if (args.idle_minutes != null) {
+        const ms = args.idle_minutes * 60_000;
+        list = list.filter((s) => Number(s.idle_ms) >= ms);
+      }
+      list.sort((a, b) => (Number(b.idle_ms) || 0) - (Number(a.idle_ms) || 0));
+      return { ok: true, response: { count: list.length, connections: list } };
+    },
   }),
 
   defineTool({

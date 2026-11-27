@@ -726,6 +726,9 @@ export class V1Connection {
     this.bytesOut = 0;
     this.dtr = null;
     this.rts = null;
+    this.openedAt = Date.now();
+    this.lastRxAt = null;
+    this.lastTxAt = null;
     this.lastError = null;
     this.lastAck = 0;
     this.startedAt = now();
@@ -1504,6 +1507,8 @@ export class V1Connection {
   }
 
   _emitData(evt) {
+    if (evt && evt.dir === "rx") this.lastRxAt = evt.ts || Date.now();
+    else if (evt && evt.dir === "tx") this.lastTxAt = evt.ts || Date.now();
     for (const fn of this.dataListeners) {
       try {
         fn(evt);
@@ -1542,6 +1547,10 @@ export class V1Connection {
       rx_dropped: 0,
       dtr: this.dtr,
       rts: this.rts,
+      opened_at: this.openedAt,
+      last_rx_at: this.lastRxAt,
+      last_tx_at: this.lastTxAt,
+      idle_ms: Date.now() - Math.max(this.openedAt, this.lastRxAt || 0, this.lastTxAt || 0),
       current_partial_line: this.hostStore ? this.hostStore.currentPartial(this.id) : null,
       error: this.lastError,
     };

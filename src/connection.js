@@ -48,6 +48,9 @@ class Connection {
     this.dataListeners = new Set(); // 实时数据订阅（web UI 用）
     this.dtr = null; // 最近一次设置的 DTR 电平（null 表示未显式设置）
     this.rts = null; // 最近一次设置的 RTS 电平
+    this.openedAt = Date.now();
+    this.lastRxAt = null;
+    this.lastTxAt = null;
 
     port.on("data", (chunk) => this._onData(chunk));
     port.on("error", (err) => this._onError(err));
@@ -66,6 +69,8 @@ class Connection {
   }
 
   _emitData(evt) {
+    if (evt && evt.dir === "rx") this.lastRxAt = evt.ts || Date.now();
+    else if (evt && evt.dir === "tx") this.lastTxAt = evt.ts || Date.now();
     for (const fn of this.dataListeners) {
       try {
         fn(evt);
@@ -628,6 +633,10 @@ class Connection {
       rx_dropped: this.dropped,
       dtr: this.dtr,
       rts: this.rts,
+      opened_at: this.openedAt,
+      last_rx_at: this.lastRxAt,
+      last_tx_at: this.lastTxAt,
+      idle_ms: Date.now() - Math.max(this.openedAt, this.lastRxAt || 0, this.lastTxAt || 0),
       current_partial_line: this.logStore ? this.logStore.currentPartial(this.id) : null,
       error: this._pumpError ? this._pumpError.message : null,
     };

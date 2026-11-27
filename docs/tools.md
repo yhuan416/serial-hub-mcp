@@ -1,6 +1,6 @@
 # Tools
 
-19 个 MCP 工具。所有工具返回统一结构：
+20 个 MCP 工具。所有工具返回统一结构：
 
 ```json
 { "ok": true, "response": {} }
@@ -15,9 +15,10 @@
 | ---------------- | ---- | ------ | ----------------------------------------- |
 | `list_ports`     | ✅   |        | 本机端口 + 所有已配置远端                 |
 | `open`           |      |        | 打开连接（本机 / 远端 / profile）         |
-| `open_list`      | ✅   |        | 成功打开过的端口索引                      |
+| `open_list`      | ✅   |        | 成功打开过的端口索引（历史，不含活动连接）|
+| `list_connections` | ✅ |        | 当前活动连接、打开/最后收发/空闲时间      |
 | `close`          |      |        | 关闭连接                                  |
-| `get_status`     | ✅   |        | 连接状态、计数、控制线                    |
+| `get_status`     | ✅   |        | 单个连接状态、计数、控制线                |
 | `read`           | ✅   |        | 从读游标读取字节                          |
 | `write`          |      |        | 发送字节                                  |
 | `transact`       |      |        | 写入后等待回包                            |
@@ -80,15 +81,28 @@ open({ remote: "lab-x86", port_id: "ttyACM0", baud_rate: 921600 })
 
 返回里的 `token` 是 `***`。成功后按 `endpoint + port_id + baud` 去重写入 `open_list`。
 
-### `open_list` / `close` / `get_status`
+打开前建议先 `list_connections`。如果相同链路 + 帧格式的连接已经开着，返回里会多出
+`duplicate_of`（已有连接的 id、打开时间、最后收发时间、收发字节），`hint` 会提示复用或先
+`close`；本机串口重复打开失败时，错误信息里也会带上已有连接的 id。
+
+### `list_connections` / `open_list` / `close` / `get_status`
 
 ```text
-open_list()
+list_connections()                           // 全部活动连接，按空闲时间从长到短
+list_connections({ transport: "remote" })
+list_connections({ port: "ttyACM0" })        // 按端口/端点子串过滤
+list_connections({ idle_minutes: 30 })       // 只看 30 分钟没读写的连接
+
+open_list()                                  // 打开过的端口索引（历史）
 open_list({ port: "ttyACM0", name: "main" })
 get_status({ connection_id: "..." })
-get_status()                 // 列出全部连接
+get_status()                 // 等价于列出全部连接状态
 close({ connection_id: "..." })
 ```
+
+`list_connections` 每条包含 `connection_id`、`transport`、`endpoint`、`port`、`config`、
+`opened_at`、`last_rx_at`、`last_tx_at`、`idle_ms`、`bytes_in/out`、`rx_dropped`，
+远端连接还有 `writer`。用它找出“开了但没人用”的连接后再 `close`。
 
 ## 收发
 
