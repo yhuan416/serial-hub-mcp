@@ -257,6 +257,11 @@ test("Web UI: xterm 资源、终端流与 /api/input 绕过队列", { timeout: 2
     assert.equal(data.event, "data");
     assert.equal(data.payload.text, "A\x1b[31mB\r\n");
 
+    // TX 不回灌终端：设备本身会回显，再写一遍就变成双份字符
+    await hub.conn.write(Buffer.from("Z"));
+    const echo = await Promise.race([reader.next(), sleep(300).then(() => null)]);
+    assert.equal(echo, null, "TX 不应出现在终端流里");
+
     // 队列被占住时，/api/input 仍应立即返回（交互式打字不能被 receive 卡住）
     let release;
     const gate = new Promise((r) => {

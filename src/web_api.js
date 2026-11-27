@@ -347,6 +347,9 @@ export function createWebApi({ manager, tools, queue }) {
 
     const queue = (evt) => {
       if (done || !evt || !evt.chunk) return;
+      // 真终端只回显设备侧（RX）。把 TX 也写回 xterm 会在设备本来就有回显时
+      // 变成“双份字符”（hheellpp）；要看 TX 用日志视图，那里有方向标注。
+      if (evt.dir === "tx") return;
       const chunk = evt.chunk;
       let noise = true;
       for (let i = 0; i < chunk.length; i += 1) {
