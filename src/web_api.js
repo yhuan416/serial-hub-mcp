@@ -465,6 +465,23 @@ export function createWebApi({ manager, tools, queue }) {
         return true;
       }
 
+      // 页面上的「关闭标签」：直接调 close 工具，绕开队列（正在 receive 也不能拖住关闭）。
+      if (req.method === "POST" && url.pathname === "/api/close") {
+        const body = await readJson(req);
+        if (typeof body.connection_id !== "string" || !body.connection_id) {
+          json(res, 400, {
+            ok: false,
+            error: { message: "close 需要 connection_id 字符串" },
+          });
+          return true;
+        }
+        const payload = await callToolNoQueue("close", {
+          connection_id: body.connection_id,
+        });
+        json(res, 200, payload);
+        return true;
+      }
+
       if (req.method === "POST" && url.pathname === "/api/write") {
         const body = await readJson(req);
         const payload = await callTool("write", body);

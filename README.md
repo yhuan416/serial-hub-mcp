@@ -22,7 +22,7 @@ The byte plane is intentionally boring: bytes in, bytes out, no framing, no prom
 interpretation. Content judgement is left to the agent. The host splits lines for retrieval,
 assigns log sequence numbers, and keeps the raw hex as the source of truth.
 
-![serial-hub-mcp Web UI: terminal and log views with live RX/TX](docs/assets/web-ui.png)
+![serial-hub-mcp Web UI: connection tabs, terminal and log views with live RX/TX](docs/assets/web-ui.png)
 
 ## Why
 
@@ -46,7 +46,8 @@ assigns log sequence numbers, and keeps the raw hex as the source of truth.
 - **Profiles and remotes**: save connection parameters, register remotes once, and let
   `list_ports` aggregate local and remote ports in parallel.
 - **Remote link v1**: binary BATCH frames, ACK flow control, capture resume, single writer.
-- **Web UI**: xterm terminal, live RX/TX log, history and download in `--http` mode.
+- **Web UI**: one tab per connection (close it from the tab, filterable picker when there
+  are many), xterm terminal, live RX/TX log, history and download in `--http` mode.
 
 ## Quick start
 

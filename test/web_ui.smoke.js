@@ -188,6 +188,24 @@ test("Web UI: 静态页、鉴权、连接列表、SSE 与写串口", { timeout: 
     assert.equal(noise.event, "noise");
     assert.equal(noise.payload.byte, 0);
     assert.ok(noise.payload.bytes >= 2048);
+
+    // 页面上的「关闭标签」：走 /api/close，关掉后连接从列表里消失
+    const closeRes = await fetch(`${base}/api/close`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ connection_id: hub.conn.id }),
+    });
+    assert.equal(closeRes.status, 200);
+    const closed = await closeRes.json();
+    assert.equal(closed.ok, true);
+    assert.equal(closed.response.connection_id, hub.conn.id);
+    assert.equal(hub.manager.get(hub.conn.id), null);
+
+    const afterClose = await fetch(`${base}/api/connections`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const afterList = await afterClose.json();
+    assert.equal(afterList.response.connections.length, 0);
   } finally {
     if (reader) await reader.close();
     if (ac) ac.abort();

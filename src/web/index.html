@@ -6,21 +6,32 @@
     <title>serial-hub-mcp · 串口调试</title>
     <link rel="stylesheet" href="/vendor/xterm.css" />
     <style>
-      :root {
+:root {
         color-scheme: dark;
-        --bg: #0e1116;
-        --panel: #151b23;
-        --panel-2: #1b232d;
-        --border: #2a3644;
-        --text: #d7dee8;
-        --muted: #8593a6;
-        --rx: #62d394;
+        --bg: #0a0d12;
+        --bg-deep: #070a0f;
+        --panel: #101620;
+        --panel-2: #151d29;
+        --panel-3: #1b2532;
+        --border: #243142;
+        --border-soft: #1a2330;
+        --text: #dbe3ee;
+        --muted: #8b99ad;
+        --muted-2: #63718a;
+        --rx: #5fd497;
         --tx: #6aa9ff;
-        --err: #ff6b6b;
+        --err: #ff7070;
+        --warn: #f0b429;
         --accent: #f0b429;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       }
       * {
         box-sizing: border-box;
+      }
+      /* [hidden] 必须压过后面任何 display 声明，否则 .actions{display:flex} 会让
+         “终端/日志”两组按钮同时出现（两个清屏）。 */
+      [hidden] {
+        display: none !important;
       }
       html,
       body {
@@ -34,27 +45,50 @@
           -apple-system,
           "Segoe UI",
           sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
       body {
         display: flex;
         flex-direction: column;
         height: 100vh;
         height: 100dvh;
+        overflow: hidden;
       }
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+      ::selection {
+        background: rgba(240, 180, 41, 0.28);
+      }
+      :focus-visible {
+        outline: 2px solid rgba(240, 180, 41, 0.55);
+        outline-offset: 1px;
+      }
+
+      /* ── 顶栏 ─────────────────────────────────────── */
       header.top {
+        flex: none;
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 8px 16px;
-        background: var(--panel);
+        gap: 10px;
+        height: 46px;
+        padding: 0 16px;
+        background: linear-gradient(180deg, #131a24, var(--panel));
         border-bottom: 1px solid var(--border);
-        flex: none;
       }
       header.top h1 {
-        font-size: 15px;
         margin: 0;
-        font-weight: 600;
+        font-size: 14px;
+        font-weight: 650;
         letter-spacing: 0.2px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
       }
       .spacer {
         flex: 1;
@@ -63,12 +97,12 @@
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: var(--muted);
+        background: var(--muted-2);
         flex: none;
       }
       .dot.on {
         background: var(--rx);
-        box-shadow: 0 0 6px var(--rx);
+        box-shadow: 0 0 0 3px rgba(95, 212, 151, 0.15);
       }
       .muted {
         color: var(--muted);
@@ -76,33 +110,82 @@
       .small {
         font-size: 12px;
       }
+      .clock {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── 按钮 / 徽标 ──────────────────────────────── */
       button {
-        font: inherit;
         color: var(--text);
         background: var(--panel-2);
         border: 1px solid var(--border);
         border-radius: 6px;
         padding: 4px 10px;
         cursor: pointer;
+        transition:
+          background 0.12s ease,
+          border-color 0.12s ease,
+          color 0.12s ease;
       }
       button:hover {
-        border-color: #3c4c60;
+        background: var(--panel-3);
+        border-color: #33465c;
       }
       button:active {
         transform: translateY(1px);
       }
       button:disabled {
-        opacity: 0.5;
+        opacity: 0.45;
         cursor: default;
+        transform: none;
       }
+      .btn.ghost {
+        background: transparent;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 9px;
+        border: 1px solid var(--border-soft);
+        border-radius: 999px;
+        background: var(--panel-2);
+        color: var(--muted);
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .chip.rx {
+        color: var(--rx);
+        border-color: rgba(95, 212, 151, 0.28);
+        background: rgba(95, 212, 151, 0.08);
+      }
+      .chip.tx {
+        color: var(--tx);
+        border-color: rgba(106, 169, 255, 0.28);
+        background: rgba(106, 169, 255, 0.08);
+      }
+      .chip.warn {
+        color: var(--warn);
+        border-color: rgba(240, 180, 41, 0.28);
+        background: rgba(240, 180, 41, 0.08);
+      }
+      .chip.err {
+        color: var(--err);
+        border-color: rgba(255, 112, 112, 0.3);
+        background: rgba(255, 112, 112, 0.08);
+      }
+
       .banner {
         display: none;
+        flex: none;
         padding: 6px 16px;
         background: rgba(255, 107, 107, 0.12);
         color: var(--err);
         border-bottom: 1px solid rgba(255, 107, 107, 0.35);
         font-size: 12.5px;
-        flex: none;
       }
       .banner.show {
         display: block;
@@ -113,44 +196,79 @@
         display: flex;
         flex-direction: column;
       }
-      .tabs {
+
+      /* ── 标签栏 ───────────────────────────────────── */
+      .tabbar {
+        position: relative;
+        z-index: 6;
         flex: none;
         display: flex;
-        gap: 4px;
-        padding: 6px 12px 0;
-        overflow-x: auto;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 12px;
         background: var(--panel);
         border-bottom: 1px solid var(--border);
-        max-width: 1240px;
-        width: 100%;
-        margin: 0 auto;
       }
-      .tabs[hidden] {
-        display: none;
+      .tabs-wrap {
+        flex: 1;
+        min-width: 0;
+      }
+      /* 连接多时换成两行，避免 16 个标签全挤成 “/dev/t…” 还要横向滚动。 */
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        max-height: 68px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #26313f transparent;
+      }
+      .tabs::-webkit-scrollbar {
+        width: 8px;
+      }
+      .tabs::-webkit-scrollbar-thumb {
+        background: #26313f;
+        border-radius: 8px;
       }
       .tab {
+        position: relative;
+        flex: 0 1 auto;
         display: inline-flex;
         align-items: center;
-        gap: 7px;
-        padding: 6px 14px;
-        border: 1px solid transparent;
-        border-bottom: none;
-        border-radius: 8px 8px 0 0;
-        background: transparent;
-        color: var(--muted);
+        gap: 6px;
+        min-width: 84px;
+        max-width: 210px;
+        height: 30px;
+        padding: 0 4px 0 9px;
+        overflow: hidden;
         white-space: nowrap;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 12.5px;
-        position: relative;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 12px;
+        cursor: pointer;
+        user-select: none;
       }
       .tab:hover {
-        background: var(--panel-2);
         color: var(--text);
+        background: var(--panel-2);
       }
       .tab.active {
-        background: #0b0f14;
         color: var(--text);
+        background: var(--bg-deep);
         border-color: var(--border);
+        box-shadow:
+          inset 2px 0 0 var(--accent),
+          0 2px 10px rgba(0, 0, 0, 0.35);
+      }
+      .tab .tab-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .tab .tab-dot {
         width: 6px;
@@ -159,73 +277,402 @@
         background: var(--rx);
         flex: none;
       }
+      .tab.closed {
+        color: var(--muted-2);
+      }
       .tab.closed .tab-dot {
-        background: var(--muted);
+        background: var(--muted-2);
       }
       .tab .unread {
+        display: none;
         width: 6px;
         height: 6px;
         border-radius: 50%;
         background: var(--accent);
         flex: none;
-        display: none;
       }
       .tab.unread .unread {
         display: inline-block;
       }
+      .tab-x {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 16px;
+        flex: none;
+        padding: 0;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted-2);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        opacity: 0;
+        transition:
+          opacity 0.12s ease,
+          background 0.12s ease,
+          color 0.12s ease;
+      }
+      .tab:hover .tab-x,
+      .tab.active .tab-x,
+      .tab:focus-within .tab-x {
+        opacity: 1;
+      }
+      .tab-x:hover {
+        background: rgba(255, 112, 112, 0.16);
+        border-color: transparent;
+        color: var(--err);
+      }
+      .tab-x:focus-visible {
+        opacity: 1;
+      }
+      @media (hover: none) {
+        .tab-x {
+          opacity: 1;
+        }
+      }
+      .picker-btn {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 10px;
+        color: var(--muted);
+      }
+      .picker-btn:hover {
+        color: var(--text);
+      }
+      .picker-btn .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 9px;
+        background: var(--panel-3);
+        color: var(--muted);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .picker {
+        position: absolute;
+        top: calc(100% - 4px);
+        right: 12px;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        width: min(380px, calc(100vw - 24px));
+        max-height: min(60vh, 520px);
+        overflow: hidden;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+      }
+      .picker-head {
+        display: flex;
+        gap: 6px;
+        padding: 8px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .picker-head input {
+        flex: 1;
+        min-width: 0;
+        padding: 5px 9px;
+        color: var(--text);
+        background: var(--bg-deep);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .picker-head input::placeholder {
+        color: var(--muted-2);
+      }
+      .picker-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 4px;
+      }
+      .picker-list::-webkit-scrollbar {
+        width: 10px;
+      }
+      .picker-list::-webkit-scrollbar-thumb {
+        background: #26313f;
+        border: 3px solid transparent;
+        background-clip: content-box;
+        border-radius: 8px;
+      }
+      .picker-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 7px 8px;
+        text-align: left;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      .picker-item:hover {
+        background: var(--panel-3);
+        border-color: transparent;
+      }
+      .picker-item.active {
+        background: rgba(240, 180, 41, 0.08);
+        border-color: rgba(240, 180, 41, 0.35);
+      }
+      .picker-item .pi-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .picker-item .pi-name {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12.5px;
+      }
+      .picker-item .pi-sub {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .picker-item .pi-io {
+        display: flex;
+        flex: none;
+        gap: 4px;
+        font-size: 11px;
+      }
+      .picker-item .pi-io .chip {
+        height: 20px;
+        padding: 0 7px;
+        font-size: 11px;
+      }
+      .picker-item .pi-x {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        flex: none;
+        padding: 0;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted-2);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        opacity: 0;
+        transition:
+          opacity 0.12s ease,
+          background 0.12s ease,
+          color 0.12s ease;
+      }
+      .picker-item:hover .pi-x,
+      .picker-item:focus-within .pi-x {
+        opacity: 1;
+      }
+      .picker-item .pi-x:hover {
+        background: rgba(255, 112, 112, 0.16);
+        border-color: transparent;
+        color: var(--err);
+      }
+      @media (hover: none) {
+        .picker-item .pi-x {
+          opacity: 1;
+        }
+      }
+      .picker-foot {
+        padding: 6px 10px 8px;
+        border-top: 1px solid var(--border-soft);
+      }
+      .picker-empty {
+        padding: 18px 10px;
+        color: var(--muted);
+        text-align: center;
+        font-size: 12.5px;
+      }
+
+      /* ── 终端区 ───────────────────────────────────── */
       .terminal {
         flex: 1;
         min-height: 0;
         display: flex;
         flex-direction: column;
-        width: 100%;
-        max-width: 1240px;
-        margin: 0 auto;
-        background: #0b0f14;
-        border-left: 1px solid var(--border);
-        border-right: 1px solid var(--border);
-      }
-      .terminal[hidden] {
-        display: none;
+        background: var(--bg-deep);
       }
       .toolbar {
         flex: none;
         display: flex;
-        align-items: baseline;
-        gap: 10px;
+        align-items: center;
+        gap: 10px 14px;
         padding: 8px 12px;
-        border-bottom: 1px solid var(--border);
         background: var(--panel-2);
+        border-bottom: 1px solid var(--border);
         flex-wrap: wrap;
       }
-      .toolbar .title {
-        font-weight: 600;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      .conn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex-wrap: wrap;
       }
-      .toolbar .meta {
+      .conn-name {
+        max-width: 44vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: var(--mono);
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+      .chips {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+      .toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+        flex-wrap: wrap;
+      }
+      .vsep {
+        width: 1px;
+        height: 18px;
+        background: var(--border);
+      }
+      .segmented {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        background: var(--bg-deep);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+      }
+      .seg {
+        padding: 3px 12px;
+        color: var(--muted);
+        background: transparent;
+        border: none;
+        border-radius: 5px;
+      }
+      .seg:hover {
+        color: var(--text);
+        background: var(--panel-3);
+        border-color: transparent;
+      }
+      .seg.active {
+        color: var(--text);
+        background: var(--panel-3);
+        box-shadow: inset 0 0 0 1px var(--border);
+      }
+      .actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .field {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         color: var(--muted);
         font-size: 12px;
+        white-space: nowrap;
       }
-      .toolbar .actions {
+      .field select,
+      .send select {
+        padding: 4px 6px;
+        color: var(--text);
+        background: var(--bg-deep);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 12.5px;
+      }
+      .views {
+        flex: 1;
+        min-height: 0;
         display: flex;
-        gap: 6px;
+      }
+      .view {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .term-stack {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        margin: 6px 8px;
+      }
+      .term-hint {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        color: var(--muted);
+        font-size: 12.5px;
+        font-style: italic;
+      }
+      .term-host {
+        position: absolute;
+        inset: 0;
+      }
+      .term-host .xterm {
+        height: 100%;
+      }
+      /* xterm.css 默认给 viewport 刷黑底，未铺满的最后几像素会露出黑边。 */
+      .xterm .xterm-viewport {
+        background-color: var(--bg-deep);
+        scrollbar-width: thin;
+        scrollbar-color: #26313f transparent;
       }
       .log {
         flex: 1;
         min-height: 0;
         overflow: auto;
-        padding: 8px 12px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        padding: 10px 14px;
+        background: var(--bg-deep);
+        font-family: var(--mono);
         font-size: 12.5px;
-        line-height: 1.55;
+        line-height: 1.6;
         white-space: pre-wrap;
-        word-break: break-all;
-        background: #0b0f14;
+        overflow-wrap: anywhere;
+      }
+      .log::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      .log::-webkit-scrollbar-thumb {
+        background: #26313f;
+        border: 3px solid transparent;
+        background-clip: content-box;
+        border-radius: 8px;
       }
       .line .ts {
-        color: #63718a;
+        color: var(--muted-2);
+        font-variant-numeric: tabular-nums;
       }
       .line .dir {
+        margin-right: 2px;
         font-weight: 700;
       }
       .line.rx .dir {
@@ -243,72 +690,99 @@
       }
       .hint {
         flex: none;
+        padding: 4px 14px 10px;
         color: var(--muted);
         font-size: 12.5px;
-        padding: 4px 12px 10px;
         font-style: italic;
-      }
-      .hint[hidden] {
-        display: none;
       }
       .send {
         flex: none;
         display: flex;
         gap: 8px;
         padding: 8px 12px;
-        border-top: 1px solid var(--border);
         background: var(--panel-2);
-        flex-wrap: wrap;
+        border-top: 1px solid var(--border);
       }
       .send input[type="text"] {
         flex: 1;
-        min-width: 180px;
-        font: inherit;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        min-width: 140px;
+        padding: 7px 10px;
         color: var(--text);
-        background: #0b0f14;
+        background: var(--bg-deep);
         border: 1px solid var(--border);
         border-radius: 6px;
-        padding: 6px 10px;
+        font-family: var(--mono);
       }
-      .send select {
-        font: inherit;
-        color: var(--text);
-        background: #0b0f14;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 6px 8px;
+      .send input[type="text"]::placeholder {
+        color: var(--muted-2);
       }
+      .send button[type="submit"] {
+        padding: 6px 16px;
+      }
+
+      /* ── 空状态 / 令牌弹层 ────────────────────────── */
       .empty {
         flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
-        text-align: center;
-        color: var(--muted);
         padding: 40px 20px;
       }
-      .empty[hidden] {
+      .empty-card {
+        max-width: 430px;
+        padding: 28px 26px;
+        text-align: center;
+        background: var(--panel);
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+      }
+      .empty-icon {
+        margin-bottom: 10px;
+        color: var(--accent);
+        font-size: 26px;
+        line-height: 1;
+      }
+      .empty-card h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      .empty-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .empty-card p + p {
+        margin-top: 6px;
+      }
+      .empty-card code {
+        padding: 1px 5px;
+        background: var(--panel-3);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .overlay.hidden {
         display: none;
       }
       .overlay {
         position: fixed;
         inset: 0;
-        background: rgba(5, 8, 12, 0.78);
+        z-index: 50;
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 20;
-      }
-      .overlay.hidden {
-        display: none;
+        padding: 20px;
+        background: rgba(4, 7, 11, 0.8);
+        backdrop-filter: blur(3px);
       }
       .overlay form {
-        width: min(420px, 92vw);
+        width: min(420px, 100%);
+        padding: 22px;
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 20px;
+        border-radius: 14px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
       }
       .overlay h2 {
         margin: 0 0 6px;
@@ -321,122 +795,128 @@
       }
       .overlay input {
         width: 100%;
-        font: inherit;
+        padding: 9px 11px;
         color: var(--text);
-        background: #0b0f14;
+        background: var(--bg-deep);
         border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 8px 10px;
-        margin-bottom: 12px;
+        border-radius: 8px;
       }
-      .mode-group {
-        display: inline-flex;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        overflow: hidden;
-      }
-      .mode-btn {
-        border: none;
-        border-radius: 0;
-        background: transparent;
-        color: var(--muted);
-        padding: 4px 12px;
-      }
-      .mode-btn.active {
-        background: #0b0f14;
-        color: var(--text);
-      }
-      .views {
-        flex: 1;
-        min-height: 0;
+      .overlay .row {
         display: flex;
+        justify-content: flex-end;
+        margin-top: 14px;
       }
-      .view {
-        flex: 1;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
-      }
-      .view[hidden] {
-        display: none;
-      }
-      .view-term {
-        background: #0b0f14;
-      }
-      .term-stack {
-        position: relative;
-        flex: 1;
-        min-height: 0;
-        margin: 4px 6px;
-      }
-      .term-host {
-        position: absolute;
-        inset: 0;
-      }
-      .term-host[hidden] {
-        display: none;
-      }
-      .term-host .xterm {
-        height: 100%;
-      }
-      @media (max-width: 640px) {
-        .tabs {
-          padding: 6px 8px 0;
+
+      @media (max-width: 720px) {
+        header.top {
+          padding: 0 10px;
+        }
+        .tabbar {
+          padding: 6px 8px;
         }
         .tab {
-          padding: 6px 10px;
+          min-width: 88px;
         }
         .toolbar {
-          gap: 6px;
+          gap: 8px;
+          padding: 8px;
+        }
+        .conn-name {
+          max-width: 100%;
+        }
+        .toolbar-actions {
+          width: 100%;
+          margin-left: 0;
+        }
+        .picker {
+          right: 8px;
         }
       }
     </style>
   </head>
-  <body>
+<body>
     <header class="top">
-      <span class="dot" id="live-dot"></span>
-      <h1>serial-hub-mcp</h1>
-      <span class="muted small" id="conn-count">0 个连接</span>
+      <div class="brand">
+        <span class="dot" id="live-dot"></span>
+        <h1>serial-hub-mcp</h1>
+        <span class="chip" id="conn-count">0 个连接</span>
+      </div>
       <span class="spacer"></span>
-      <span class="muted small" id="clock"></span>
-      <button id="token-btn" class="small" title="设置访问令牌">令牌</button>
+      <span class="clock muted small" id="clock"></span>
+      <button type="button" id="token-btn" class="btn ghost small" title="设置访问令牌">令牌</button>
     </header>
+
     <div class="banner" id="banner"></div>
+
     <main>
-      <nav class="tabs" id="tabs" hidden></nav>
+      <nav class="tabbar" id="tabbar" hidden>
+        <div class="tabs-wrap" id="tabs-wrap">
+          <div class="tabs" id="tabs" role="tablist" aria-label="串口连接"></div>
+        </div>
+        <button
+          type="button"
+          class="btn ghost picker-btn"
+          id="picker-btn"
+          title="所有连接（Alt+K）"
+          aria-expanded="false"
+        >
+          全部<span class="badge" id="picker-count">0</span>
+        </button>
+        <div class="picker" id="picker" hidden>
+          <div class="picker-head">
+            <input
+              type="text"
+              id="picker-filter"
+              placeholder="过滤端口 / 连接 ID…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button type="button" class="btn ghost small" id="picker-close" title="关闭（Esc）">
+              ✕
+            </button>
+          </div>
+          <div class="picker-list" id="picker-list" role="listbox" aria-label="连接列表"></div>
+          <div class="picker-foot muted small">↑ ↓ 选择 · Enter 切换 · Esc 关闭</div>
+        </div>
+      </nav>
+
       <section class="terminal" id="terminal" hidden>
         <div class="toolbar">
-          <span class="title" id="active-title"></span>
-          <span class="meta" id="active-meta"></span>
-          <span class="spacer"></span>
-          <span class="mode-group">
-            <button type="button" class="mode-btn active" id="mode-term" data-mode="term">终端</button>
-            <button type="button" class="mode-btn" id="mode-log" data-mode="log">日志</button>
-          </span>
-          <span class="actions group-term">
-            <label class="small muted"
-              >Enter
-              <select id="enter-mode" title="Enter 发送的换行">
-                <option value="cr">CR</option>
-                <option value="crlf">CRLF</option>
-                <option value="lf">LF</option>
-              </select>
-            </label>
-            <label class="small muted"
-              >退格
-              <select id="backspace-mode" title="Backspace 发送的字节">
-                <option value="del">DEL 0x7f</option>
-                <option value="bs">BS 0x08</option>
-              </select>
-            </label>
-            <button type="button" id="term-clear-btn">清屏</button>
-          </span>
-          <span class="actions group-log" hidden>
-            <button type="button" id="older-btn" title="从服务端缓存加载更早的数据">更早</button>
-            <button type="button" id="download-btn" title="导出服务端缓存为文件">下载</button>
-            <button type="button" id="pause-btn" title="暂停/继续接收显示">暂停</button>
-            <button type="button" id="clear-btn">清屏</button>
-          </span>
+          <div class="conn">
+            <span class="conn-name" id="active-title"></span>
+            <div class="chips" id="active-meta"></div>
+          </div>
+          <div class="toolbar-actions">
+            <div class="segmented" role="group" aria-label="视图">
+              <button type="button" class="seg active" id="mode-term" data-mode="term">终端</button>
+              <button type="button" class="seg" id="mode-log" data-mode="log">日志</button>
+            </div>
+            <span class="vsep"></span>
+            <span class="actions group-term">
+              <label class="field" title="Enter 发送的换行">
+                Enter
+                <select id="enter-mode">
+                  <option value="cr">CR</option>
+                  <option value="crlf">CRLF</option>
+                  <option value="lf">LF</option>
+                </select>
+              </label>
+              <label class="field" title="Backspace 发送的字节">
+                退格
+                <select id="backspace-mode">
+                  <option value="del">DEL 0x7f</option>
+                  <option value="bs">BS 0x08</option>
+                </select>
+              </label>
+              <button type="button" id="term-clear-btn">清屏</button>
+            </span>
+            <span class="actions group-log" hidden>
+              <button type="button" id="older-btn" title="从服务端缓存加载更早的数据">更早</button>
+              <button type="button" id="download-btn" title="导出服务端缓存为文件">下载</button>
+              <button type="button" id="pause-btn" title="暂停 / 继续接收显示">暂停</button>
+              <button type="button" id="clear-btn">清屏</button>
+            </span>
+          </div>
         </div>
         <div class="views">
           <div class="view view-log" id="view-log" hidden>
@@ -459,13 +939,20 @@
             </form>
           </div>
           <div class="view view-term" id="view-term">
-            <div class="term-stack" id="term-stack"></div>
+            <div class="term-stack" id="term-stack">
+              <div class="term-hint" id="term-hint" hidden>连接已打开，等待数据…</div>
+            </div>
           </div>
         </div>
       </section>
+
       <div class="empty" id="empty">
-        还没有打开的串口。<br />
-        用 MCP 工具 <code>open</code> 打开一个串口，这里会自动出现。
+        <div class="empty-card">
+          <div class="empty-icon">⌁</div>
+          <h2>还没有打开的串口</h2>
+          <p>用 MCP 工具 <code>open</code> 打开一个串口，这里会自动出现。</p>
+          <p class="muted small">连接建立后，页面会为它新开一个标签页。</p>
+        </div>
       </div>
     </main>
 
@@ -474,7 +961,7 @@
         <h2>需要访问令牌</h2>
         <p>服务设置了 SERIAL_HUB_MCP_HTTP_TOKEN，请输入 Bearer token。</p>
         <input type="password" id="token-input" placeholder="token" autocomplete="off" />
-        <button type="submit">保存并重试</button>
+        <div class="row"><button type="submit">保存并重试</button></div>
       </form>
     </div>
 
@@ -484,15 +971,24 @@
 
       (() => {
         const TOKEN_KEY = "serial-hub-mcp-token";
+        const PREFS_KEY = "serial-hub-mcp-prefs";
         const MAX_LINES = 10000;
         const MAX_HISTORY = 5000;
         const MAX_DOM = MAX_LINES + MAX_HISTORY;
         const HISTORY_LIMIT = 500;
         const tabsEl = document.getElementById("tabs");
+        const tabbarEl = document.getElementById("tabbar");
+        const pickerBtn = document.getElementById("picker-btn");
+        const pickerCountEl = document.getElementById("picker-count");
+        const pickerEl = document.getElementById("picker");
+        const pickerListEl = document.getElementById("picker-list");
+        const pickerFilterEl = document.getElementById("picker-filter");
+        const pickerCloseBtn = document.getElementById("picker-close");
         const terminalEl = document.getElementById("terminal");
         const viewLogEl = document.getElementById("view-log");
         const viewTermEl = document.getElementById("view-term");
         const termStackEl = document.getElementById("term-stack");
+        const termHintEl = document.getElementById("term-hint");
         const modeTermBtn = document.getElementById("mode-term");
         const modeLogBtn = document.getElementById("mode-log");
         const logActionsEl = document.querySelector(".group-log");
@@ -575,6 +1071,49 @@
           return data ? (data.response ?? data) : {};
         }
 
+        /**
+         * 直接调 MCP 工具。老版本服务端没有 /api/close，但 /mcp 一直有 close 工具，
+         * 这样页面升级后不必重启服务端也能关闭连接。
+         */
+        async function callMcpTool(name, args) {
+          const res = await fetch("/mcp", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json, text/event-stream",
+              ...authHeaders(),
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: Date.now(),
+              method: "tools/call",
+              params: { name, arguments: args },
+            }),
+          });
+          if (res.status === 401) {
+            showTokenPrompt();
+            throw new Error("需要访问令牌");
+          }
+          const contentType = res.headers.get("content-type") || "";
+          let payload = null;
+          if (contentType.includes("text/event-stream")) {
+            const text = await res.text();
+            const line = text.split("\n").find((l) => l.startsWith("data:"));
+            payload = line ? JSON.parse(line.slice(5).trim()) : null;
+          } else {
+            payload = await res.json().catch(() => null);
+          }
+          if (!res.ok || !payload) throw new Error(`MCP ${res.status}`);
+          if (payload.error) throw new Error(payload.error.message || "MCP 调用失败");
+          const text = payload.result && payload.result.content && payload.result.content[0];
+          if (!text || typeof text.text !== "string") return {};
+          const result = JSON.parse(text.text);
+          if (result && result.ok === false) {
+            throw new Error((result.error && result.error.message) || "工具调用失败");
+          }
+          return result.response ?? result;
+        }
+
         function fmtBytes(n) {
           n = Number(n) || 0;
           if (n < 1024) return `${n} B`;
@@ -607,9 +1146,34 @@
           return `${baud} ${bits}${parity}${stop} · ${transport}`;
         }
 
+        function fullPort(conn) {
+          if (!conn) return "";
+          return String(
+            conn.port || (conn.config && conn.config.port_id) || conn.connection_id.slice(0, 8),
+          );
+        }
+
         function tabName(conn) {
           if (!conn) return "?";
-          return conn.port || (conn.config && conn.config.port_id) || conn.connection_id.slice(0, 8);
+          return fullPort(conn).replace(/^\/dev\//, "");
+        }
+
+        // 同一个串口被多次 open 时标签一模一样，这里按出现顺序补 #1/#2。
+        function displayNames() {
+          const total = new Map();
+          for (const entry of conns.values()) {
+            const base = tabName(entry.status);
+            total.set(base, (total.get(base) || 0) + 1);
+          }
+          const seen = new Map();
+          const names = new Map();
+          for (const [id, entry] of conns) {
+            const base = tabName(entry.status);
+            const n = (seen.get(base) || 0) + 1;
+            seen.set(base, n);
+            names.set(id, total.get(base) > 1 ? `${base} #${n}` : base);
+          }
+          return names;
         }
 
         // ── 终端（xterm）──────────────────────────────────────
@@ -626,10 +1190,10 @@
             fontSize: 13,
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
             theme: {
-              background: "#0b0f14",
-              foreground: "#d7dee8",
+              background: "#070a0f",
+              foreground: "#dbe3ee",
               cursor: "#f0b429",
-              selectionBackground: "#2a3644",
+              selectionBackground: "#26334a",
             },
           });
           const fit = new FitAddon();
@@ -645,8 +1209,16 @@
           }
         }
 
+        function updateTermHint(entry) {
+          if (!entry || entry.id !== activeId) return;
+          const hasData = Boolean(entry.termHadData) || Boolean(entry.termBuffer);
+          termHintEl.hidden = hasData || entry.mode === "log";
+        }
+
         function termWrite(entry, text) {
           if (!text) return;
+          entry.termHadData = true;
+          updateTermHint(entry);
           if (entry.term) {
             entry.term.write(text);
             return;
@@ -724,7 +1296,9 @@
           if (termMode) {
             ensureTerm(entry);
             if (entry.termEl) entry.termEl.hidden = false;
+            ensureTermStream(entry);
             ensureLogStream(entry);
+            updateTermHint(entry);
             requestAnimationFrame(() => {
               if (entry.id !== activeId || entry.mode === "log") return;
               fitTerm(entry);
@@ -837,6 +1411,23 @@
           }
         }
 
+        function closeTermStream(entry) {
+          if (!entry || !entry.termAc) return;
+          try {
+            entry.termAc.abort();
+          } catch (_) {
+            /* ignore */
+          }
+          entry.termAc = null;
+        }
+
+        // 只给当前标签开终端流：浏览器同域只允许 ~6 条 HTTP/1.1 连接，
+        // 16 个连接各开一条 SSE 会把日志流挤到永远建立不起来。
+        function ensureTermStream(entry) {
+          if (!entry || entry.id !== activeId) return;
+          if (!entry.termAc) void openTermStream(entry);
+        }
+
         function closeLogStream(entry) {
           if (!entry || !entry.logAc) return;
           try {
@@ -850,25 +1441,55 @@
           if (!entry.logAc) void openLogStream(entry);
         }
 
-        function updateMeta(entry) {
-          if (!entry || entry.id !== activeId) return;
+        let metaSig = "";
+
+        function metaChips(entry) {
           const st = entry.status || {};
-          titleEl.textContent = tabName(st);
-          const parts = [frameText(st)];
-          parts.push(`RX ${fmtBytes(st.bytes_in)}`);
-          parts.push(`TX ${fmtBytes(st.bytes_out)}`);
-          if (Number(st.rx_dropped) > 0) parts.push(`丢弃 ${fmtBytes(st.rx_dropped)}`);
-          if (st.reconnecting) parts.push("重连中");
-          if (st.error) parts.push(`错误 ${st.error}`);
+          const c = st.config || {};
+          const chips = [];
+          const baud = c.baud_rate ?? "";
+          const bits = c.data_bits ?? 8;
+          const parity = c.parity === "even" ? "E" : c.parity === "odd" ? "O" : "N";
+          const stop = c.stop_bits ?? 1;
+          if (baud !== "") chips.push({ text: `${baud} ${bits}${parity}${stop}` });
+          chips.push({ text: st.transport || "serial" });
+          chips.push({ text: `RX ${fmtBytes(st.bytes_in)}`, cls: "rx" });
+          chips.push({ text: `TX ${fmtBytes(st.bytes_out)}`, cls: "tx" });
+          if (Number(st.rx_dropped) > 0)
+            chips.push({ text: `丢弃 ${fmtBytes(st.rx_dropped)}`, cls: "warn" });
+          if (st.reconnecting) chips.push({ text: "重连中", cls: "warn" });
+          if (st.error) chips.push({ text: "错误", cls: "err", title: String(st.error) });
           if (entry.noise && entry.noise.bytes > 0) {
             const b = entry.noise.byte;
-            const tag = Number.isFinite(b) ? ` (0x${Number(b).toString(16).padStart(2, "0")})` : "";
-            parts.push(`非文本 ${fmtBytes(entry.noise.bytes)}${tag}`);
+            const tag = Number.isFinite(b) ? ` 0x${Number(b).toString(16).padStart(2, "0")}` : "";
+            chips.push({ text: `非文本 ${fmtBytes(entry.noise.bytes)}${tag}`, cls: "warn" });
           }
-          if (entry.dropped > 0) parts.push(`已丢 ${entry.dropped} 块`);
-          if (entry.paused) parts.push("已暂停");
-          if (entry.closed) parts.push("已关闭");
-          metaEl.textContent = parts.join(" · ");
+          if (entry.dropped > 0) chips.push({ text: `已丢 ${entry.dropped} 块`, cls: "warn" });
+          if (entry.paused) chips.push({ text: "已暂停", cls: "warn" });
+          if (entry.closed || st.open === false) chips.push({ text: "已关闭" });
+          return chips;
+        }
+
+        function updateMeta(entry) {
+          if (!entry || entry.id !== activeId) return;
+          const name = nameCache.get(entry.id) || tabName(entry.status);
+          const chips = metaChips(entry);
+          const sig = `${name}\u0000${JSON.stringify(chips)}`;
+          if (sig === metaSig) return;
+          metaSig = sig;
+          titleEl.textContent = name;
+          titleEl.title = entry.id;
+          metaEl.textContent = "";
+          const frag = document.createDocumentFragment();
+          for (const chip of chips) {
+            const el = document.createElement("span");
+            el.className = chip.cls ? `chip ${chip.cls}` : "chip";
+            el.textContent = chip.text;
+            if (chip.title) el.title = chip.title;
+            frag.appendChild(el);
+          }
+          metaEl.appendChild(frag);
+          document.title = `${name} · serial-hub-mcp`;
         }
 
         function updateHint(entry) {
@@ -890,10 +1511,13 @@
         function updateSummary() {
           const n = conns.size;
           countEl.textContent = `${n} 个连接`;
+          pickerCountEl.textContent = String(n);
+          pickerBtn.hidden = n < 2; // 只有一个连接时选择器没有意义
           dotEl.classList.toggle("on", n > 0);
           emptyEl.hidden = n > 0;
           terminalEl.hidden = n === 0;
-          tabsEl.hidden = n === 0;
+          tabbarEl.hidden = n === 0;
+          if (n === 0) closePicker();
           updateHint(activeEntry());
         }
 
@@ -901,33 +1525,98 @@
           return activeId ? conns.get(activeId) || null : null;
         }
 
+        let nameCache = new Map();
+
+        // div 自己当按钮用：鼠标点击 + Enter/Space 都要能激活。
+        function activateOnClick(el, fn) {
+          el.addEventListener("click", fn);
+          el.addEventListener("keydown", (ev) => {
+            // 焦点在里面的关闭按钮上时，Enter/Space 只归按钮，不要顺带切标签。
+            if (ev.target !== el) return;
+            if (ev.key !== "Enter" && ev.key !== " ") return;
+            ev.preventDefault();
+            fn();
+          });
+        }
+
+        async function closeConnection(id) {
+          const entry = conns.get(id);
+          if (!entry) return;
+          const label = nameCache.get(id) || tabName(entry.status);
+          const ok = window.confirm(
+            `关闭连接 ${label}？\n\n这会断开串口，正在使用它的 MCP 客户端也会受影响。`,
+          );
+          if (!ok) return;
+          try {
+            const res = await fetch("/api/close", {
+              method: "POST",
+              headers: { "content-type": "application/json", ...authHeaders() },
+              body: JSON.stringify({ connection_id: id }),
+            });
+            if (res.status === 401) {
+              showTokenPrompt();
+              throw new Error("需要访问令牌");
+            }
+            if (res.status === 404 || res.status === 405) {
+              // 旧服务端没有这个接口，退回 /mcp 的 close 工具。
+              await callMcpTool("close", { connection_id: id });
+            } else {
+              const data = await res.json().catch(() => null);
+              if (!res.ok || (data && data.ok === false)) {
+                const msg =
+                  (data && data.error && data.error.message) || `${res.status} ${res.statusText}`;
+                throw new Error(msg);
+              }
+            }
+            closeTermStream(entry);
+            closeLogStream(entry);
+            await refresh();
+          } catch (err) {
+            showBanner(`关闭失败：${err.message}`);
+          }
+        }
+
         function syncTabs() {
           const sig = [...conns.keys()].join("|");
           if (sig !== lastTabSig) {
             lastTabSig = sig;
             tabsEl.textContent = "";
-            for (const [id, entry] of conns) {
-              const btn = document.createElement("button");
-              btn.type = "button";
-              btn.className = "tab";
-              btn.dataset.id = id;
+            for (const [id] of conns) {
+              const tab = document.createElement("div");
+              tab.className = "tab";
+              tab.dataset.id = id;
+              tab.setAttribute("role", "tab");
+              tab.tabIndex = 0;
               const dot = document.createElement("span");
               dot.className = "tab-dot";
               const name = document.createElement("span");
               name.className = "tab-name";
               const unread = document.createElement("span");
               unread.className = "unread";
-              name.textContent = tabName(entry.status);
-              btn.append(dot, name, unread);
-              btn.addEventListener("click", () => setActive(id, true));
-              tabsEl.appendChild(btn);
-              entry.tabEl = btn;
+              const close = document.createElement("button");
+              close.type = "button";
+              close.className = "tab-x";
+              close.textContent = "×";
+              close.title = "关闭这个连接";
+              close.setAttribute("aria-label", "关闭这个连接");
+              close.addEventListener("click", (ev) => {
+                ev.stopPropagation();
+                void closeConnection(id);
+              });
+              tab.append(dot, name, unread, close);
+              activateOnClick(tab, () => setActive(id, true));
+              tabsEl.appendChild(tab);
+              conns.get(id).tabEl = tab;
             }
+            requestAnimationFrame(() => scrollActiveTab(false));
           }
+          nameCache = displayNames();
           for (const [id, entry] of conns) {
             if (!entry.tabEl) continue;
+            const label = nameCache.get(id) || "?";
             const name = entry.tabEl.querySelector(".tab-name");
-            if (name) name.textContent = tabName(entry.status);
+            if (name) name.textContent = label;
+            entry.tabEl.title = `${label}\n${fullPort(entry.status)}\n${frameText(entry.status)}\n${id}`;
             entry.tabEl.classList.toggle("active", id === activeId);
             entry.tabEl.classList.toggle("unread", entry.unread > 0 && id !== activeId);
             entry.tabEl.classList.toggle(
@@ -935,6 +1624,106 @@
               Boolean(entry.closed) || (entry.status && entry.status.open === false),
             );
           }
+          if (!pickerEl.hidden) renderPicker();
+        }
+
+        // 标签溢出时把当前连接滚进可视区，避免切到“看不见的标签”。
+        function scrollActiveTab(smooth = true) {
+          const btn = activeId ? conns.get(activeId)?.tabEl : null;
+          if (!btn) return;
+          const pad = 8;
+          const view = tabsEl.getBoundingClientRect();
+          const rect = btn.getBoundingClientRect();
+          const opts = {};
+          if (rect.left < view.left + pad) opts.left = tabsEl.scrollLeft + rect.left - view.left - pad;
+          else if (rect.right > view.right - pad)
+            opts.left = tabsEl.scrollLeft + rect.right - view.right + pad;
+          if (rect.top < view.top + pad) opts.top = tabsEl.scrollTop + rect.top - view.top - pad;
+          else if (rect.bottom > view.bottom - pad)
+            opts.top = tabsEl.scrollTop + rect.bottom - view.bottom + pad;
+          if (!Object.keys(opts).length) return;
+          if (smooth) opts.behavior = "smooth";
+          tabsEl.scrollTo(opts);
+        }
+
+        // ── 连接选择器（16+ 连接时的快速跳转）─────────────
+        function renderPicker() {
+          const q = pickerFilterEl.value.trim().toLowerCase();
+          pickerListEl.textContent = "";
+          let shown = 0;
+          for (const [id, entry] of conns) {
+            const label = nameCache.get(id) || tabName(entry.status);
+            const st = entry.status || {};
+            const hay = `${label} ${id} ${st.port || ""} ${st.transport || ""}`.toLowerCase();
+            if (q && !hay.includes(q)) continue;
+            shown += 1;
+            const item = document.createElement("div");
+            item.className = "picker-item";
+            item.dataset.id = id;
+            item.tabIndex = 0;
+            item.setAttribute("role", "option");
+            item.setAttribute("aria-selected", id === activeId ? "true" : "false");
+            if (id === activeId) item.classList.add("active");
+            const dot = document.createElement("span");
+            dot.className = "dot";
+            if (id === activeId && !entry.closed && st.open !== false) dot.classList.add("on");
+            const main = document.createElement("span");
+            main.className = "pi-main";
+            const name = document.createElement("span");
+            name.className = "pi-name";
+            name.textContent = label;
+            const sub = document.createElement("span");
+            sub.className = "pi-sub";
+            sub.textContent = `${frameText(st)} · ${id.slice(0, 8)}`;
+            main.append(name, sub);
+            const io = document.createElement("span");
+            io.className = "pi-io";
+            const rx = document.createElement("span");
+            rx.className = "chip rx";
+            rx.textContent = fmtBytes(st.bytes_in);
+            const tx = document.createElement("span");
+            tx.className = "chip tx";
+            tx.textContent = fmtBytes(st.bytes_out);
+            io.append(rx, tx);
+            const close = document.createElement("button");
+            close.type = "button";
+            close.className = "pi-x";
+            close.textContent = "×";
+            close.title = "关闭这个连接";
+            close.setAttribute("aria-label", "关闭这个连接");
+            close.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              void closeConnection(id);
+            });
+            item.append(dot, main, io, close);
+            activateOnClick(item, () => {
+              setActive(id, true);
+              closePicker();
+            });
+            pickerListEl.appendChild(item);
+          }
+          if (!shown) {
+            const empty = document.createElement("div");
+            empty.className = "picker-empty";
+            empty.textContent = conns.size ? "没有匹配的连接" : "还没有连接";
+            pickerListEl.appendChild(empty);
+          }
+        }
+
+        function openPicker() {
+          if (!conns.size) return;
+          pickerEl.hidden = false;
+          pickerBtn.setAttribute("aria-expanded", "true");
+          pickerFilterEl.value = "";
+          renderPicker();
+          pickerFilterEl.focus();
+        }
+
+        function closePicker() {
+          if (pickerEl.hidden) return;
+          pickerEl.hidden = true;
+          pickerBtn.setAttribute("aria-expanded", "false");
+          pickerFilterEl.value = "";
         }
 
         function lineNode(item) {
@@ -1017,6 +1806,7 @@
                 cancelAnimationFrame(prev.raf);
                 prev.raf = 0;
               }
+              closeTermStream(prev);
               closeLogStream(prev);
             }
             activeId = id;
@@ -1025,20 +1815,17 @@
             pauseBtn.textContent = entry.paused ? "继续" : "暂停";
           }
           syncTabs();
+          metaSig = "";
           updateMeta(entry);
           updateSummary();
           applyMode(entry, Boolean(focusInput));
+          scrollActiveTab(true);
         }
 
         function removeEntry(id) {
           const entry = conns.get(id);
           if (!entry) return;
-          if (entry.termAc) {
-            try {
-              entry.termAc.abort();
-            } catch (_) {}
-            entry.termAc = null;
-          }
+          closeTermStream(entry);
           closeLogStream(entry);
           if (entry.term) {
             try {
@@ -1064,6 +1851,8 @@
               logEl.textContent = "";
               titleEl.textContent = "";
               metaEl.textContent = "";
+              metaSig = "";
+              document.title = "serial-hub-mcp · 串口调试";
             }
           }
           syncTabs();
@@ -1221,6 +2010,7 @@
             fitAddon: null,
             termAc: null,
             termBuffer: "",
+            termHadData: false,
             termForceReconnect: false,
             logAc: null,
             inputQueue: "",
@@ -1245,7 +2035,6 @@
               let entry = conns.get(id);
               if (!entry) {
                 entry = makeEntry(conn);
-                void openTermStream(entry);
               } else {
                 entry.status = { ...(entry.status || {}), ...conn };
                 if (entry.id === activeId) updateMeta(entry);
@@ -1273,10 +2062,12 @@
         modeTermBtn.addEventListener("click", () => setMode("term"));
         modeLogBtn.addEventListener("click", () => setMode("log"));
         enterModeEl.addEventListener("change", () => {
+          savePrefs();
           const entry = activeEntry();
           if (entry && entry.term) entry.term.focus();
         });
         backspaceModeEl.addEventListener("change", () => {
+          savePrefs();
           const entry = activeEntry();
           if (entry && entry.term) entry.term.focus();
         });
@@ -1284,11 +2075,80 @@
           const entry = activeEntry();
           if (!entry) return;
           entry.termBuffer = "";
+          entry.termHadData = false;
           if (entry.term) entry.term.clear();
+          updateTermHint(entry);
         });
         window.addEventListener("resize", () => {
           const entry = activeEntry();
           if (entry && entry.mode === "term") fitTerm(entry);
+          scrollActiveTab(false);
+        });
+        if (typeof ResizeObserver !== "undefined") {
+          // 工具栏换行、窗口缩放都会改变终端可视区，比 window.resize 更准。
+          const ro = new ResizeObserver(() => {
+            const entry = activeEntry();
+            if (entry && entry.mode === "term") fitTerm(entry);
+          });
+          ro.observe(viewTermEl);
+        }
+
+        // 标签溢出时，纵向滚轮也能横向浏览（原生滚动条已隐藏）。
+        tabsEl.addEventListener(
+          "wheel",
+          (ev) => {
+            if (ev.ctrlKey || tabsEl.scrollWidth <= tabsEl.clientWidth) return;
+            if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
+            ev.preventDefault();
+            tabsEl.scrollLeft += ev.deltaY;
+          },
+          { passive: false },
+        );
+        pickerBtn.addEventListener("click", () => {
+          if (pickerEl.hidden) openPicker();
+          else closePicker();
+        });
+        pickerCloseBtn.addEventListener("click", closePicker);
+        pickerFilterEl.addEventListener("input", renderPicker);
+        pickerFilterEl.addEventListener("keydown", (ev) => {
+          if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+            const items = [...pickerListEl.querySelectorAll(".picker-item")];
+            if (!items.length) return;
+            ev.preventDefault();
+            items[ev.key === "ArrowDown" ? 0 : items.length - 1].focus();
+            return;
+          }
+          if (ev.key !== "Enter") return;
+          ev.preventDefault();
+          const first = pickerListEl.querySelector(".picker-item");
+          if (first) first.click();
+        });
+        pickerListEl.addEventListener("keydown", (ev) => {
+          if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
+          const items = [...pickerListEl.querySelectorAll(".picker-item")];
+          if (!items.length) return;
+          ev.preventDefault();
+          const idx = items.indexOf(document.activeElement);
+          let next;
+          if (ev.key === "ArrowDown") next = idx < 0 ? 0 : Math.min(items.length - 1, idx + 1);
+          else next = idx < 0 ? items.length - 1 : Math.max(0, idx - 1);
+          items[next].focus();
+        });
+        document.addEventListener("pointerdown", (ev) => {
+          if (pickerEl.hidden) return;
+          if (pickerEl.contains(ev.target) || pickerBtn.contains(ev.target)) return;
+          closePicker();
+        });
+        document.addEventListener("keydown", (ev) => {
+          if (ev.key === "Escape") {
+            closePicker();
+            return;
+          }
+          if (ev.altKey && (ev.key === "k" || ev.key === "K")) {
+            ev.preventDefault();
+            if (pickerEl.hidden) openPicker();
+            else closePicker();
+          }
         });
 
         pauseBtn.addEventListener("click", () => {
@@ -1454,6 +2314,29 @@
           tokenInput.focus();
         });
 
+        function loadPrefs() {
+          try {
+            return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {};
+          } catch (_) {
+            return {};
+          }
+        }
+
+        function savePrefs() {
+          try {
+            localStorage.setItem(
+              PREFS_KEY,
+              JSON.stringify({ enter: enterModeEl.value, backspace: backspaceModeEl.value }),
+            );
+          } catch (_) {
+            /* 隐私模式等场景下忽略 */
+          }
+        }
+
+        const prefs = loadPrefs();
+        if (["cr", "crlf", "lf"].includes(prefs.enter)) enterModeEl.value = prefs.enter;
+        if (["del", "bs"].includes(prefs.backspace)) backspaceModeEl.value = prefs.backspace;
+
         setInterval(() => {
           clockEl.textContent = fmtTs(Date.now()).slice(0, 12);
           const entry = activeEntry();
@@ -1465,4 +2348,3 @@
       })();
     </script>
   </body>
-</html>

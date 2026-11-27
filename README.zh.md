@@ -19,7 +19,7 @@ English: [README.md](README.md)
 字节面保持透明：进什么出什么，不组帧、不判读提示符/正则，内容判断交给 agent。host 负责按行
 切分、分配日志 `seq` 和保存原始 hex。
 
-![serial-hub-mcp 网页界面：终端与日志视图，实时 RX/TX](docs/assets/web-ui.png)
+![serial-hub-mcp 网页界面：连接标签、终端与日志视图，实时 RX/TX](docs/assets/web-ui.png)
 
 ## 为什么
 
@@ -39,7 +39,8 @@ English: [README.md](README.md)
 - **持久日志**：默认 v2 二进制 segment + SQLite(WAL) block 索引；仍可用 `legacy` JSONL。
 - **profile 与 remote**：保存常用参数、注册远端，`list_ports` 并行汇总本机和远端端口。
 - **远端 v1 链路**：二进制 BATCH、ACK 流控、capture 续传、单 writer。
-- **网页界面**：`--http` 下提供 xterm 终端、实时 RX/TX、历史加载和下载。
+- **网页界面**：每个连接一个标签（标签上可直接关闭，连接多时用可过滤的选择器跳转）、
+  xterm 终端、实时 RX/TX、历史加载和下载，`--http` 下可用。
 
 ## 快速开始
 
