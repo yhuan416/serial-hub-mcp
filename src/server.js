@@ -33,6 +33,7 @@ import { keyedSerialQueue } from "./keyed_queue.js";
 import { buildTools } from "./tools/index.js";
 import { resolveDump } from "./dump_catalog.js";
 import { cacheTtlDays, startCacheSweep } from "./cache_ttl.js";
+import { startIdleSweep } from "./idle_sweep.js";
 import { readSecret } from "./secrets.js";
 import { buildHttpAllowlist } from "./http_allowlist.js";
 
@@ -148,6 +149,10 @@ const cacheSweep = startCacheSweep();
 // hub：本地连接和远端 v1 的 host 缓存分两个目录，LogRouter 全量查询才不会被重复计入。
 const logRouter = new LogRouter(logStore, { remoteStore });
 const manager = new ConnectionManager(logRouter, { remoteStore });
+// 空闲回收默认关闭；SERIAL_HUB_MCP_IDLE_CLOSE_MINUTES>0 时每分钟扫一次。
+startIdleSweep(manager, {
+  minutes: Number(process.env.SERIAL_HUB_MCP_IDLE_CLOSE_MINUTES) || 0,
+});
 // 按连接串行：同连接排队，跨连接并发（hub 多设备必需）。
 const queue = keyedSerialQueue();
 

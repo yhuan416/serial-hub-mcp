@@ -33,6 +33,14 @@ function connKeyOf(statusOrConfig) {
   ].join("|");
 }
 
+function lastActiveMs(status) {
+  return Math.max(
+    Number(status.last_rx_at) || 0,
+    Number(status.last_tx_at) || 0,
+    Number(status.opened_at) || 0,
+  );
+}
+
 function summarizeConn(status) {
   return {
     connection_id: status.connection_id,
@@ -357,7 +365,8 @@ export const connTools = (manager) => [
       "baud_rate 默认 115200；data_bits 默认 8；stop_bits 默认 1；parity 默认 none；flow_control 默认 none。" +
       "newline 设置发送默认追加的换行（write/transact 未显式指定时的默认）。" +
       "成功后返回 connection_id，后续 read/write/transact 用它。" +
-      "打开前可先 list_connections：参数相同的连接已存在时，返回里会带 duplicate_of，建议复用或先 close。" +
+      "打开前可先 list_connections；reuse:true 时若已有完全相同链路+帧格式的连接，直接复用它并返回 reused:true（reuse_cursor 默认 tail，把读游标移到最新）。" +
+      "不开 reuse 时，参数相同的连接已存在会在返回里带 duplicate_of，建议复用或先 close。" +
       "同一路 UART 只有一个 writer。第二路要写时传 claim_writer:true。" +
       "可选 name 给这次打开起名。成功后按 endpoint+port_id+波特率去重记入 open_list。返回里的 token 为 ***。",
     inputSchema: z.object({
@@ -384,6 +393,18 @@ export const connTools = (manager) => [
         .boolean()
         .optional()
         .describe("远端已有 writer 时抢走写权。默认 false，第二路只读"),
+      reuse: z
+        .boolean()
+        .optional()
+        .describe(
+          "true 时优先复用已有连接：链路（transport/endpoint/port_id）+ 波特率 + 帧格式 + 流控完全相同时直接返回它，不新建",
+        ),
+      reuse_cursor: z
+        .enum(["tail", "keep"])
+        .optional()
+        .describe(
+          "复用时读游标：tail（默认，跳到最新，跳过积压）/ keep（保留自上次读取以来的积压）",
+        ),
       port: z.string().optional().describe("串口路径，如 /dev/ttyUSB0、/dev/ttyACM0、COM3"),
       profile: z
         .string()
@@ -478,6 +499,29 @@ export const connTools = (manager) => [
       const wantKey = connKeyOf(merged);
       const existing = manager.list().filter((s) => connKeyOf(s) === wantKey);
 
+      if (merged.reuse === true && existing.length) {
+        const match = existing.slice().sort((a, b) => lastActiveMs(b) - lastActiveMs(a))[0];
+        if (transport === "remote" && merged.claim_writer === true && match.writer === false) {
+          throw new Error(
+            `已有同参数的只读连接 ${match.connection_id}，不能复用来写。请先 close 它，再 open({ claim_writer: true })。`,
+          );
+        }
+        const conn = manager.get(match.connection_id);
+        if (!conn) throw new Error(`连接已消失：${match.connection_id}`);
+        const reuseCursor = merged.reuse_cursor === "keep" ? "keep" : "tail";
+        if (reuseCursor === "tail" && typeof conn.seekToEnd === "function") conn.seekToEnd();
+        const response = conn.status();
+        response.reused = true;
+        response.reuse_cursor = reuseCursor;
+        response.hint =
+          reuseCursor === "tail"
+            ? "已复用现有连接，读游标已移到最新；旧数据用 log_query / dump_to_file 取。close 会关闭这条共享连接。"
+            : "已复用现有连接，读游标保持原样（含上次读取以来的积压）。close 会关闭这条共享连接。";
+        return { ok: true, response };
+      }
+
+      delete merged.reuse;
+      delete merged.reuse_cursor;
       let response;
       try {
         response = await manager.open(merged);

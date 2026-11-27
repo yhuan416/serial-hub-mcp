@@ -249,3 +249,13 @@ test("status：打开时间与最后收发时间", async () => {
   assert.ok(st2.last_tx_at >= st0.opened_at);
   assert.ok(st2.idle_ms >= 0 && st2.idle_ms < 60_000);
 });
+
+test("seekToEnd：跳过积压但不丢缓冲", async () => {
+  const conn = new Connection(null, fakePort(), { rx_buffer_size: 100 });
+  conn._onData(Buffer.from("abc"));
+  assert.equal(conn.status().rx_buffered, 3);
+  conn.seekToEnd();
+  assert.equal(conn.status().rx_buffered, 0);
+  const r = await conn.read({});
+  assert.equal(r.data.length, 0);
+});

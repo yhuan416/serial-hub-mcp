@@ -137,3 +137,126 @@ test("open: 没有同参数连接时不多加字段", async () => {
   assert.equal(res.response.duplicate_of, undefined);
   assert.equal(res.response.hint, undefined);
 });
+
+function reusable(statusObj, calls = []) {
+  return {
+    id: statusObj.connection_id,
+    seekToEnd() {
+      calls.push("seek");
+    },
+    status: () => ({ ...statusObj }),
+  };
+}
+
+test("open: reuse:true 复用已有连接并默认把游标移到最新", async () => {
+  process.env.SERIAL_HUB_MCP_OPENS_FILE = OPENS_FILE;
+  const calls = [];
+  const old = status({ connection_id: "old", writer: true, bytes_in: 99 });
+  const manager = {
+    list: () => [old],
+    get: (id) => (id === "old" ? reusable(old, calls) : null),
+    open: async () => {
+      calls.push("open");
+      return status({ connection_id: "new" });
+    },
+  };
+  const tools = byName(manager);
+  const res = await invokeTool(
+    tools.get("open"),
+    {
+      transport: "remote",
+      endpoint: "tcp://hub:7000",
+      port_id: "ttyACM0",
+      baud_rate: 115200,
+      reuse: true,
+    },
+    null,
+  );
+  assert.equal(res.response.connection_id, "old");
+  assert.equal(res.response.reused, true);
+  assert.equal(res.response.reuse_cursor, "tail");
+  assert.equal(res.response.bytes_in, 99);
+  assert.ok(calls.includes("seek"));
+  assert.equal(calls.includes("open"), false);
+});
+
+test("open: reuse_cursor:keep 不动游标", async () => {
+  process.env.SERIAL_HUB_MCP_OPENS_FILE = OPENS_FILE;
+  const calls = [];
+  const old = status({ connection_id: "old", writer: true });
+  const manager = {
+    list: () => [old],
+    get: () => reusable(old, calls),
+    open: async () => status({ connection_id: "new" }),
+  };
+  const tools = byName(manager);
+  const res = await invokeTool(
+    tools.get("open"),
+    {
+      transport: "remote",
+      endpoint: "tcp://hub:7000",
+      port_id: "ttyACM0",
+      baud_rate: 115200,
+      reuse: true,
+      reuse_cursor: "keep",
+    },
+    null,
+  );
+  assert.equal(res.response.reused, true);
+  assert.equal(res.response.reuse_cursor, "keep");
+  assert.deepEqual(calls, []);
+});
+
+test("open: reuse 只读连接 + claim_writer 明确报错", async () => {
+  process.env.SERIAL_HUB_MCP_OPENS_FILE = OPENS_FILE;
+  const old = status({ connection_id: "old", writer: false });
+  const manager = {
+    list: () => [old],
+    get: () => reusable(old),
+    open: async () => status({ connection_id: "new" }),
+  };
+  const tools = byName(manager);
+  await assert.rejects(
+    invokeTool(
+      tools.get("open"),
+      {
+        transport: "remote",
+        endpoint: "tcp://hub:7000",
+        port_id: "ttyACM0",
+        baud_rate: 115200,
+        reuse: true,
+        claim_writer: true,
+      },
+      null,
+    ),
+    /只读连接/,
+  );
+});
+
+test("open: reuse:true 但没有同参数连接时正常新开", async () => {
+  process.env.SERIAL_HUB_MCP_OPENS_FILE = OPENS_FILE;
+  let opened = 0;
+  const manager = {
+    list: () => [status({ connection_id: "other", config: { baud_rate: 921600 } })],
+    get: () => null,
+    open: async (cfg) => {
+      opened += 1;
+      return { ...status({ connection_id: "new" }), config: cfg };
+    },
+  };
+  const tools = byName(manager);
+  const res = await invokeTool(
+    tools.get("open"),
+    {
+      transport: "remote",
+      endpoint: "tcp://hub:7000",
+      port_id: "ttyACM0",
+      baud_rate: 115200,
+      reuse: true,
+    },
+    null,
+  );
+  assert.equal(opened, 1);
+  assert.equal(res.response.connection_id, "new");
+  assert.equal(res.response.reused, undefined);
+});

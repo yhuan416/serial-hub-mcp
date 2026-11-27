@@ -596,6 +596,13 @@ class Connection {
     };
   }
 
+  /** 把读游标推到最新（复用连接时跳过积压，不丢缓冲和日志）。 */
+  seekToEnd() {
+    this.handled = this._length;
+    this._notify();
+    return this.handled;
+  }
+
   async flushInput() {
     // 丢弃 OS 读缓冲 + 内部全部 backlog（清空分段缓冲，等效全部丢弃）
     this._chunks = [];

@@ -161,6 +161,7 @@ Common variables; the full table is in [docs/configuration.md](docs/configuratio
 | `SERIAL_HUB_MCP_HTTP_UI`        | `1`                                            | `0` disables the Web UI                                   |
 | `SERIAL_HUB_MCP_STORE`          | `v2`                                           | `v2` (segments + SQLite) or `legacy` (JSONL)              |
 | `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7`                                            | Delete logs/dumps/captures older than this; `0` disables  |
+| `SERIAL_HUB_MCP_IDLE_CLOSE_MINUTES` | `0`                                        | Close connections idle for N minutes; `0` disables        |
 | `SERIAL_HUB_MCP_REMOTES_FILE`   | `$XDG_CONFIG_HOME/serial-hub-mcp/remotes.json` | Remote registry                                           |
 | `SERIAL_HUB_MCP_PROFILES_DIR`   | `$XDG_CONFIG_HOME/serial-hub-mcp`              | Directory containing `profiles.json`                      |
 

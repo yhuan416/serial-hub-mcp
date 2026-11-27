@@ -24,6 +24,7 @@
 | `SERIAL_HUB_MCP_PROFILES_DIR`     | `$XDG_CONFIG_HOME/serial-hub-mcp`                | `profiles.json` 所在目录               |
 | `SERIAL_HUB_MCP_DUMPS_DIR`        | `$XDG_CACHE_HOME/serial-hub-mcp/dumps`           | `dump_to_file` 输出                    |
 | `SERIAL_HUB_MCP_CACHE_TTL_DAYS`   | `7`                                              | 日志、dump、捕获缓存保留天数；`0` 关闭 |
+| `SERIAL_HUB_MCP_IDLE_CLOSE_MINUTES` | `0`                                            | 空闲超过 N 分钟自动关闭连接；`0` 关闭   |
 | `SERIAL_HUB_MCP_SYNC_DIR`         | `$XDG_CACHE_HOME/serial-hub-mcp/remote-sync`     | 旧 remote-sync 缓存                    |
 | `SERIAL_HUB_MCP_V1_CACHE_DIR`     | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cache`        | 未启用 v2 store 时的 v1 host 缓存      |
 | `SERIAL_HUB_MCP_V1_STATE_FILE`    | `$XDG_CACHE_HOME/serial-hub-mcp/v1-cursors.json` | v1 续传游标                            |

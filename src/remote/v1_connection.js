@@ -1518,6 +1518,12 @@ export class V1Connection {
     }
   }
 
+  /** 把读游标推到最新（复用连接时跳过积压，不丢缓存和日志）。 */
+  seekToEnd() {
+    this.rxCursor = this.cache.newestOffset;
+    return this.rxCursor;
+  }
+
   async flushInput() {
     this.rxCursor = this.cache.newestOffset;
     return { flushed: true };

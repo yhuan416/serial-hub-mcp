@@ -68,6 +68,8 @@ list_ports({ endpoint: "tcp://192.168.1.50:7000", token: "..." })
 | `remote`                                              | 已配置的 remote 名；自动填 endpoint/token      |
 | `port_id`                                             | 远端端口 ID，如 `ttyACM0` / `uart1`            |
 | `claim_writer`                                        | 远端已有 writer 时抢写权                       |
+| `reuse`                                               | `true` 时优先复用同参数活动连接                |
+| `reuse_cursor`                                        | 复用时读游标：`tail`（默认）/ `keep`           |
 | `name`                                                | 这次打开的备注名，写入 `open_list`             |
 
 示例：
@@ -84,6 +86,20 @@ open({ remote: "lab-x86", port_id: "ttyACM0", baud_rate: 921600 })
 打开前建议先 `list_connections`。如果相同链路 + 帧格式的连接已经开着，返回里会多出
 `duplicate_of`（已有连接的 id、打开时间、最后收发时间、收发字节），`hint` 会提示复用或先
 `close`；本机串口重复打开失败时，错误信息里也会带上已有连接的 id。
+
+**复用（继承）**：`open({ ..., reuse: true })` 会在链路（`transport + endpoint + port_id/port`）、
+波特率、帧格式、流控完全一致时，直接返回已有连接（`reused: true`），不再新建。
+
+```text
+open({ remote: "lab-x86", port_id: "ttyACM0", reuse: true })                // 跳到最新
+open({ remote: "lab-x86", port_id: "ttyACM0", reuse: true, reuse_cursor: "keep" })  // 保留积压
+```
+
+- `reuse_cursor` 默认 `tail`：把读游标推到最新，跳过上次没人读的积压（旧数据仍可用
+  `log_query` / `dump_to_file` 取）；`keep` 则保持原游标。
+- 复用是**共享**：读游标、日志、远端 writer 都是同一条连接的；任何一方 `close` 都会关掉它。
+- 想写但已有的是远端只读连接时，`reuse` + `claim_writer:true` 会直接报错，需要先 `close` 再开。
+- 参数不完全一致（比如波特率不同）不会复用，仍按原逻辑新开。
 
 ### `list_connections` / `open_list` / `close` / `get_status`
 

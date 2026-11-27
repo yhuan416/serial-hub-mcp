@@ -154,6 +154,7 @@ open({ transport: "remote", endpoint: "tcp://192.168.4.67:7000", token: "...", p
 | `SERIAL_HUB_MCP_HTTP_UI`        | `1`                                            | `0` 关闭网页界面                             |
 | `SERIAL_HUB_MCP_STORE`          | `v2`                                           | `v2`（segment + SQLite）或 `legacy`（JSONL） |
 | `SERIAL_HUB_MCP_CACHE_TTL_DAYS` | `7`                                            | 日志/dump/捕获保留天数；`0` 关闭             |
+| `SERIAL_HUB_MCP_IDLE_CLOSE_MINUTES` | `0`                                        | 空闲超过 N 分钟自动关闭连接；`0` 关闭         |
 | `SERIAL_HUB_MCP_REMOTES_FILE`   | `$XDG_CONFIG_HOME/serial-hub-mcp/remotes.json` | 远端注册表                                   |
 | `SERIAL_HUB_MCP_PROFILES_DIR`   | `$XDG_CONFIG_HOME/serial-hub-mcp`              | `profiles.json` 目录                         |
 
